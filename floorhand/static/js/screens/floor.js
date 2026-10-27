@@ -28,8 +28,10 @@ registerScreen({
     const totals = st.reduce((a, s) => ({ q: a.q + s.queue, d: a.d + s.done_today, c: a.c + s.capacity }), { q: 0, d: 0, c: 0 });
     const maxQ = Math.max(1, ...st.map(s => s.queue));
     const hot = st.find(s => s.bottleneck);
+    const gate = await api('/api/gate/summary');
     root.innerHTML = `
       <header class="head"><div><h1>${t("floor")}</h1><p class="sub">${esc(fmtDate(new Date().toISOString(), { withDay: true }))}</p></div></header>
+      <p class="pill warn">${esc(document.documentElement.lang === 'ru' ? gate.message_ru : gate.message)}</p>
       <div class="stats">
         ${stat(t("inQueue"), totals.q)}
         ${stat(t("doneToday"), totals.d, { sub: `${t("capacity")}: ${totals.c}` })}

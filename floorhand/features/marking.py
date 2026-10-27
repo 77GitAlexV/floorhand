@@ -803,6 +803,10 @@ def propose(conn: sqlite3.Connection, actor: Actor, text: str, *, method: str = 
                             "У вас не указан участок. Попросите менеджера его указать."))
     model = heard_by + "+rules"
     if intents is None:
+        from . import slang
+        if slang.mentions_dictionary(conn, text):
+            return slang.propose(conn, actor, text, heard_by=heard_by,
+                                 created_at=created_at)
         parsed = speech.parse(text, _kind_words(conn))
         if parsed.negated:
             return {"ok": False, "status": "nothing", "heard": text,
@@ -949,6 +953,23 @@ def decide(conn: sqlite3.Connection, actor: Actor, action_id: int, yes: bool) ->
         raise DomainError(T(lang, "This was said too long ago. Say it again.",
                             "Это было слишком давно. Скажите ещё раз."))
     payload = json.loads(row["payload"])
+    if 'slang' in payload:
+        from . import slang
+        slang.validate(conn, payload['slang']['meaning'] or {},
+                       domain.person(conn, actor.person_id)['stage_id'])
+        if not payload['items']:
+            raise DomainError(T(lang, 'Correct the proposal or scan the order sheet first.',
+                                'Сначала исправьте предложение или сканируйте листок заказа.'))
+        meaning = payload['slang']['meaning']
+        for item in payload['items']:
+            if item['type'] == 'component':
+                continue
+            order = domain._unit_order(conn, item['unit_id'])
+            if (order['product_id'] != meaning['product_id'] or
+                    (meaning.get('option') and not set(slang.intake.norm(meaning['option']).split())
+                     <= set(slang.intake.norm(order['variant']).split()))):
+                raise DomainError(T(lang, 'Order changed. Say the work again.',
+                                    'Заказ изменился. Скажите о работе ещё раз.'))
     results = []
     for i, item in enumerate(payload["items"]):
         key = f"aa{action_id}.{i}"
@@ -956,6 +977,9 @@ def decide(conn: sqlite3.Connection, actor: Actor, action_id: int, yes: bool) ->
             if item["type"] == "mark":
                 r = mark(conn, actor, unit_id=item["unit_id"], method=payload["method"],
                          idem_key=key, created_at=payload.get("created_at"))
+            elif item['type'] == 'component' and 'slang' in payload:
+                r = slang.record_component(conn, actor, action_id, item['meaning'],
+                                            payload.get('created_at'))
             elif item["type"] == "undo":
                 r = undo(conn, actor, item["event_id"])
             elif item["type"] == "signal":
@@ -969,6 +993,8 @@ def decide(conn: sqlite3.Connection, actor: Actor, action_id: int, yes: bool) ->
                             "message": r["message"]})
         except DomainError as exc:
             results.append({"item": i, "ok": False, "status": "refused", "message": str(exc)})
+    if 'slang' in payload:
+        slang.learn(conn, actor, action_id, payload, results)
     conn.execute("UPDATE agent_actions SET status = 'applied', decided_by = ?, decided_at = ?, "
                  "result = ? WHERE id = ? AND status = 'proposed'",
                  (actor.person_id, when, json.dumps({"results": results}, ensure_ascii=False),

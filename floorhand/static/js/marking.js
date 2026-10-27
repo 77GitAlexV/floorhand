@@ -1,7 +1,7 @@
 // Every way a worker marks work, on top of /api/marking (features/marking.py):
 // scan or type the sheet number, speak, the offline queue, the end-of-day check and
 // "did other work" claims. Voice only proposes; nothing is recorded before [Yes].
-import { addStrings, api, apiFetch, t, esc, state, flash, toast, idem } from "./core.js";
+import { addStrings, api, apiFetch, t, esc, state, flash, toast, idem, go } from "./core.js";
 import { btn, chip, sheet } from "./ui.js";
 
 addStrings({
@@ -173,6 +173,11 @@ async function proposal(r, ctx) {
   if (r.silent) return;
   if (!r.ok) { flash(false, r.message); return; }
   if (r.status !== "proposal") { flash(false, r.message); return; }
+  if ('meaning' in r) {
+    try { sessionStorage.setItem('fh_glue_proposal', JSON.stringify({ person: state.me.id, proposal: r })); } catch { /* repeat words in glue mode */ }
+    go('handsfree');
+    return;
+  }
   const items = (r.items || []).map(i =>
     `<li class="${i.type === "problem" ? "muted" : ""}">${esc(i.say)}</li>`).join("");
   const yes = await sheet({ title: t("mkUnderstood"), body: `<ul class="plain">${items}</ul>`,

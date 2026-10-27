@@ -19,3 +19,5 @@ import "./me.js";        // everyone: language, text size, theme, sign out
 import "./ripple-report.js"; // worker/manager: one-line disruption receipt
 import "./ripple.js";    // owner/manager: queue scenarios, also embedded in Today/Floor
 import "./rush.js";      // owner/manager: conditional urgent quote
+import "./handsfree.js";
+import "./gate.js";

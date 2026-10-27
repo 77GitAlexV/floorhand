@@ -28,6 +28,8 @@ def conn(tmp_path, monkeypatch):
     db.init(c)
     c.execute("INSERT INTO settings VALUES ('tz', 'Asia/Bangkok')")
     c.execute("INSERT INTO settings VALUES ('currency', 'demo credits')")
+    # These readiness fixtures declare their invented fabric for the release gate.
+    c.execute("INSERT INTO settings VALUES ('fabrics', '[\"velvet beige\", \"graphite\"]')")
     for seq, capacity in enumerate((10, 4, 8), 1):
         c.execute("INSERT INTO stages VALUES (?, ?, ?, ?, ?, ?)",
                   (seq, f"stage-{seq}", f"Demo stage {seq}", f"Демоэтап {seq}", seq, capacity))

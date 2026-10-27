@@ -212,7 +212,7 @@ def test_already_marked_by_someone_else_names_them(conn):
 def test_missing_rate_records_says_pending_and_tells_the_owner_once(conn):
     bunny = conn.execute("SELECT id FROM products WHERE name LIKE 'Kids%'").fetchone()[0]
     oid = domain.create_order(conn, product_id=bunny, qty=2, customer_id=None, due_date=None,
-                              variant="", source="manual")
+                              variant="velvet beige · natural", source="manual")
     units = [r[0] for r in conn.execute("SELECT id FROM units WHERE order_id = ?", (oid,))]
     sids = [stage_id(conn, c) for c in ("cut", "sew")]
     for u in units:
@@ -279,7 +279,7 @@ def test_work_is_never_dated_before_its_order_existed(conn, clock):
     me = Actor(worker_at(conn, "cut"))
     pid = conn.execute("SELECT id FROM products LIMIT 1").fetchone()[0]
     oid = domain.create_order(conn, product_id=pid, qty=1, customer_id=None, due_date=None,
-                              variant="", source="manual")
+                              variant="velvet beige · natural", source="manual")
     u = conn.execute("SELECT id FROM units WHERE order_id = ?", (oid,)).fetchone()[0]
     r = mk.mark(conn, me, unit_id=u, for_date=(TODAY - timedelta(days=2)).isoformat())
     created = conn.execute("SELECT created_at FROM orders WHERE id = ?", (oid,)).fetchone()[0]
