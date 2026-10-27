@@ -1,0 +1,33 @@
+// One name per action across the whole product.
+const STRINGS = {
+  en: {
+    ok: "OK", who: "Who is working?", tablet: "Shared tablet (no money on screen)",
+    floor: "Shop floor", officeTeam: "Office",
+    work: "Work", money: "Money", me: "Me", today: "Today", pcs: "pc(s)",
+    assigned: "Assigned to me", free: "Free at", doneToday: "Done today",
+    done1: "+ DONE 1 PC", take: "Take 1", ready: "done here", of: "of",
+    pricePending: "price pending", undo: "Made a mistake — undo",
+    scan: "Scan sheet", speak: "Speak", soon: "Coming in the next build.",
+    nothingAssigned: "Nothing assigned to you. Take work from the free list below.",
+    nothingFree: "Nothing free at your stage right now.",
+    due: "due", toStock: "to stock", week: "Last 7 days", paid: "Paid",
+    toBePaid: "To be paid", signOut: "Sign out", markedBy: "Marking:",
+    lang: "Language", textSize: "Text size", queue: "queue", todayOf: "today",
+    bottleneck: "bottleneck", cantReach: "No connection. Try again.",
+  },
+  ru: {
+    ok: "OK", who: "Кто работает?", tablet: "Общий планшет (без денег на экране)",
+    floor: "Цех", officeTeam: "Офис",
+    work: "Работа", money: "Деньги", me: "Я", today: "Сегодня", pcs: "шт",
+    assigned: "Мне выдано", free: "Свободное на", doneToday: "Сегодня сделал",
+    done1: "＋ ГОТОВО 1 ШТ", take: "Взять 1", ready: "готово здесь", of: "из",
+    pricePending: "цена уточняется", undo: "Ошибся — отменить",
+    scan: "Скан листка", speak: "Сказать", soon: "Будет в следующей сборке.",
+    nothingAssigned: "Тебе ничего не выдано. Возьми работу из свободного ниже.",
+    nothingFree: "Свободной работы на твоём этапе нет.",
+    due: "отдать к", toStock: "на склад", week: "Последние 7 дней", paid: "Выплачено",
+    toBePaid: "К выплате", signOut: "Выйти", markedBy: "Отмечает:",
+    lang: "Язык", textSize: "Размер текста", queue: "очередь", todayOf: "сегодня",
+    bottleneck: "узкое место", cantReach: "Нет связи. Попробуй ещё раз.",
+  },
+};

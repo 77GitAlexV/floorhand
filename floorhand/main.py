@@ -1,0 +1,174 @@
+"""HTTP API and static files. Run: uvicorn floorhand.main:app --reload"""
+import secrets
+from pathlib import Path
+from typing import Iterator
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from . import db, domain
+from .domain import DomainError
+
+STATIC = Path(__file__).resolve().parent / "static"
+COOKIE = "fh_session"
+
+app = FastAPI(title="Floorhand")
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+@app.exception_handler(DomainError)
+def domain_error(_: Request, exc: DomainError) -> JSONResponse:
+    # A refusal is an answer, not a crash: the screen shows it in red as-is.
+    return JSONResponse({"ok": False, "message": str(exc)}, status_code=409)
+
+
+def get_conn() -> Iterator:
+    conn = db.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+class Session(BaseModel):
+    person_id: int
+    role: str
+    stage_id: int | None
+    tablet: bool
+
+
+def session(request: Request, conn=Depends(get_conn)) -> Session:
+    token = request.cookies.get(COOKIE)
+    row = token and conn.execute(
+        "SELECT s.person_id, s.tablet, p.role, p.stage_id FROM sessions s "
+        "JOIN people p ON p.id = s.person_id WHERE s.token = ?", (token,)).fetchone()
+    if not row:
+        raise HTTPException(401, "Sign in first.")
+    return Session(person_id=row["person_id"], role=row["role"],
+                   stage_id=row["stage_id"], tablet=bool(row["tablet"]))
+
+
+def worker(s: Session = Depends(session)) -> Session:
+    if s.stage_id is None:
+        raise HTTPException(403, "This screen is for the shop floor.")
+    return s
+
+
+def office(s: Session = Depends(session)) -> Session:
+    if s.role not in ("manager", "owner"):
+        raise HTTPException(403, "This screen is for the office.")
+    return s
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(STATIC / "index.html")
+
+
+# --- sign-in (demo: pick a person; real PIN/QR sign-in comes later) -------
+
+@app.get("/api/demo/people")
+def demo_people(conn=Depends(get_conn)) -> list[dict]:
+    rows = conn.execute("SELECT p.id, p.name, p.role, s.name_en AS stage, s.name_ru AS stage_ru "
+                        "FROM people p LEFT JOIN stages s ON s.id = p.stage_id "
+                        "ORDER BY p.role DESC, s.seq, p.name").fetchall()
+    return [dict(r) for r in rows]
+
+
+class LoginIn(BaseModel):
+    person_id: int
+    tablet: bool = False
+
+
+@app.post("/api/login")
+def login(body: LoginIn, response: Response, conn=Depends(get_conn)) -> dict:
+    who = domain.person(conn, body.person_id)
+    token = secrets.token_urlsafe(24)
+    conn.execute("INSERT INTO sessions (token, person_id, tablet, created_at) VALUES (?, ?, ?, ?)",
+                 (token, who["id"], int(body.tablet),
+                  domain.now(conn).isoformat(timespec="seconds")))
+    conn.commit()
+    response.set_cookie(COOKIE, token, httponly=True, samesite="lax")
+    return {"ok": True}
+
+
+@app.post("/api/logout")
+def logout(request: Request, response: Response, conn=Depends(get_conn)) -> dict:
+    conn.execute("DELETE FROM sessions WHERE token = ?", (request.cookies.get(COOKIE),))
+    conn.commit()
+    response.delete_cookie(COOKIE)
+    return {"ok": True}
+
+
+@app.get("/api/me")
+def me(s: Session = Depends(session), conn=Depends(get_conn)) -> dict:
+    who = domain.person(conn, s.person_id)
+    shop = conn.execute("SELECT value FROM settings WHERE key = 'shop_name'").fetchone()
+    return {"id": who["id"], "name": who["name"], "role": who["role"],
+            "lang": who["lang"], "tablet": s.tablet, "stage_id": s.stage_id,
+            "shop": shop["value"] if shop else ""}
+
+
+# --- worker ---------------------------------------------------------------
+
+@app.get("/api/work")
+def work(s: Session = Depends(worker), conn=Depends(get_conn)) -> dict:
+    return domain.worker_home(conn, s.person_id, show_money=not s.tablet)
+
+
+class DoneIn(BaseModel):
+    order_id: int | None = None
+    unit_id: int | None = None
+    idem_key: str | None = None
+    method: str = "button"
+
+
+@app.post("/api/work/done")
+def work_done(body: DoneIn, s: Session = Depends(worker), conn=Depends(get_conn)) -> dict:
+    if body.unit_id is None and body.order_id is None:
+        raise DomainError("Say which item: order or item number.")
+    unit_id = body.unit_id or domain.next_unit_for(conn, s.person_id, body.order_id)
+    res = domain.mark_done(conn, s.person_id, unit_id, idem_key=body.idem_key,
+                           method=body.method)
+    out = res.__dict__.copy()
+    if s.tablet:  # shared tablet never shows money
+        out["amount"] = None
+        out["message"] = out["message"].rsplit(",", 1)[0] + "." if not res.already \
+            else out["message"]
+    return out
+
+
+class UndoIn(BaseModel):
+    event_id: int
+
+
+@app.post("/api/work/undo")
+def work_undo(body: UndoIn, s: Session = Depends(worker), conn=Depends(get_conn)) -> dict:
+    return domain.undo(conn, s.person_id, body.event_id).__dict__
+
+
+class TakeIn(BaseModel):
+    order_id: int
+    n: int = 1
+
+
+@app.post("/api/work/take")
+def work_take(body: TakeIn, s: Session = Depends(worker), conn=Depends(get_conn)) -> dict:
+    n = domain.take(conn, s.person_id, body.order_id, body.n)
+    return {"ok": True, "taken": n}
+
+
+@app.get("/api/money")
+def money(s: Session = Depends(worker), conn=Depends(get_conn)) -> dict:
+    if s.tablet:
+        raise HTTPException(403, "Money is not shown on the shared tablet.")
+    return domain.earnings(conn, s.person_id)
+
+
+# --- office ---------------------------------------------------------------
+
+@app.get("/api/floor")
+def floor(s: Session = Depends(office), conn=Depends(get_conn)) -> list[dict]:
+    return domain.floor_overview(conn)
