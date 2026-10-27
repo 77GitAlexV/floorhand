@@ -2,6 +2,7 @@
 // capacity, who did how much; exactly one bottleneck highlighted with its reason.
 import { registerScreen, addStrings, api, t, esc, name, fmtDate } from "../core.js";
 import { icon, stat, bar, empty } from "../ui.js";
+import { mountWhatIf } from "./ripple.js";
 
 addStrings({
   en: {
@@ -20,7 +21,7 @@ addStrings({
 
 registerScreen({
   id: "floor", roles: ["owner"], icon: "floor", title: lang => lang === "ru" ? "Цех" : "Floor",
-  async render(root) {
+  async render(root, ctx) {
     const r = await api("/api/floor");
     if (!r.ok) { if (!r.silent) root.innerHTML = empty(r.message, "alert"); return; }
     const st = r.list;
@@ -44,5 +45,6 @@ registerScreen({
         <ul class="people">${s.people.length ? s.people.map(p => `<li class="${p.today ? "" : "idle"}"><span>${esc(p.name)}</span><b>${p.today}</b></li>`).join("") : `<li class="idle">${t("noPeople")}</li>`}</ul>
       </section>`).join("")}</div>
       <p class="muted" style="margin-top:16px">${t("capNote")}</p>`;
+    await mountWhatIf(root, ctx, true);
   },
 });

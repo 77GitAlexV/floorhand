@@ -145,13 +145,21 @@ class StagePlan:
 def plan_tomorrow(conn: sqlite3.Connection, today: date | None = None) -> dict:
     today = today or date.fromisoformat(domain.today(conn))
     target = next_workday(conn, today)
+    from .ripple import planning_context, material_ready
+    capacities, absent, priorities = planning_context(conn, target.isoformat())
     units = open_units(conn, today)
+    ready = material_ready(conn, sorted(units, key=lambda u: (u.order_id not in priorities, priority(u))),
+                           target.isoformat())
     st = domain.stages(conn)
     people = conn.execute("SELECT id, name, stage_id FROM people WHERE role = 'worker' "
                           "AND stage_id IS NOT NULL ORDER BY name").fetchall()
+    people = [p for p in people if p["id"] not in absent]
     stages: list[StagePlan] = []
     for s in st:
-        here = sorted((u for u in units if u.stage_id == s["id"]), key=priority)
+        s = dict(s)
+        s["capacity"] = capacities[s["id"]]
+        here = sorted((u for u in units if u.stage_id == s["id"]),
+                      key=lambda u: (u.order_id not in priorities, priority(u)))
         crew = [p for p in people if p["stage_id"] == s["id"]]
         load = {p["id"]: sum(1 for u in here if u.assigned_to == p["id"]) for p in crew}
         norm = s["capacity"] / max(len(crew), 1)
@@ -161,7 +169,7 @@ def plan_tomorrow(conn: sqlite3.Connection, today: date | None = None) -> dict:
                        workers=[{"id": p["id"], "name": p["name"], "on_hands": load[p["id"]],
                                  "norm": round(norm, 1)} for p in crew])
         free_cap = max(0, s["capacity"] - sp.on_hands)
-        todo = [u for u in here if u.assigned_to is None][:free_cap]
+        todo = [u for u in here if u.assigned_to is None and u.id in ready][:free_cap]
         if crew:
             new: dict[int, int] = {p["id"]: 0 for p in crew}
             by_order: dict[int, list[Unit]] = {}

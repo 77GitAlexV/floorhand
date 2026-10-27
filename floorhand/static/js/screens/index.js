@@ -11,3 +11,6 @@ import "./paperwork.js"; // office: order sheets, delivery notes, outbox
 import "./stock.js";     // office: materials, shortages, receipts
 import "./inbox.js";     // office: from the floor (claims, signals, late marks)
 import "./me.js";        // everyone: language, text size, theme, sign out
+import "./ripple-report.js"; // worker/manager: one-line disruption receipt
+import "./ripple.js";    // owner/manager: queue scenarios, also embedded in Today/Floor
+import "./rush.js";      // owner/manager: conditional urgent quote
