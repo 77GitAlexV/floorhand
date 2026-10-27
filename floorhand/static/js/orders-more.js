@@ -16,7 +16,7 @@ addStrings({
     c_fabric_defect: "Fabric defect", c_sewing_error: "Sewing error", c_upholstery_error: "Upholstery error",
     c_assembly_error: "Assembly error", c_damaged: "Damaged", c_wrong_size: "Wrong size",
     c_customer_changed: "Customer changed it", c_other: "Other",
-    oCancelOrder: "Cancel the order", oCancelWhy: "Why is it cancelled?",
+    oCancelTitle: "Cancel the order", oCancelWhy: "Why is it cancelled?",
     oUnfinishedStop: "Items in work stop", oUnfinishedStock: "Items in work go on, to stock",
     oCancelGo: "Cancel order", oStock: "In stock now, fits this order", oUseIt: "Use it",
     oComments: "Comments", oAddComment: "Add comment", oChanges: "Changes", oLocked: "locked",
@@ -42,7 +42,7 @@ addStrings({
     c_fabric_defect: "Брак ткани", c_sewing_error: "Ошибка шитья", c_upholstery_error: "Ошибка обивки",
     c_assembly_error: "Ошибка сборки", c_damaged: "Повреждено", c_wrong_size: "Не тот размер",
     c_customer_changed: "Клиент передумал", c_other: "Другое",
-    oCancelOrder: "Отменить заказ", oCancelWhy: "Почему отменён?",
+    oCancelTitle: "Отменить заказ", oCancelWhy: "Почему отменён?",
     oUnfinishedStop: "Штуки в работе остановить", oUnfinishedStock: "Штуки в работе доделать на склад",
     oCancelGo: "Отменить заказ", oStock: "Есть на складе, подходит", oUseIt: "Взять",
     oComments: "Комментарии", oAddComment: "Добавить", oChanges: "Изменения", oLocked: "закрыто",
@@ -113,7 +113,7 @@ export async function orderMore(host, o, ctx) {
       <h2 class="sec">${t("oItems")} <b>${s.units.length}</b></h2>
       <ul class="units">${s.units.map(unitRow).join("")}</ul>
       <div class="oform panel" id="of-rework" hidden></div>
-      ${s.cancelled ? "" : `<h2 class="sec">${t("oCancelOrder")}</h2>
+      ${s.cancelled ? "" : `<h2 class="sec">${t("oCancelTitle")}</h2>
       <div class="oform">
         <input class="input" id="cancelWhy" placeholder="${t("oCancelWhy")}">
         <div class="chips">${chip(t("oUnfinishedStop"), { on: true, attrs: 'data-unf="stop"' })}${chip(t("oUnfinishedStock"), { attrs: 'data-unf="to_stock"' })}</div>
