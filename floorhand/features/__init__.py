@@ -23,3 +23,12 @@ def load() -> list[APIRouter]:
         if getattr(mod, "router", None) is not None:
             routers.append(mod.router)
     return routers
+
+
+def seed_all(conn, rnd) -> None:
+    """Let each feature add its demo data after the base workshop is built.
+    A module opts in with `def seed(conn, rnd): ...`."""
+    for info in sorted(pkgutil.iter_modules(__path__), key=lambda m: m.name):
+        mod = importlib.import_module(f"{__name__}.{info.name}")
+        if callable(getattr(mod, "seed", None)):
+            mod.seed(conn, rnd)

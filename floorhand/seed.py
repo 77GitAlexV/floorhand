@@ -203,6 +203,8 @@ def build(conn, rnd: random.Random | None = None, today: date | None = None) -> 
             who = workers_by_stage[sid][i % len(workers_by_stage[sid])]
             conn.execute("INSERT INTO assignments VALUES (?, ?, ?)", (uid, sid, who))
 
+    from . import features
+    features.seed_all(conn, rnd)
     conn.commit()
     return {"orders": N_ORDERS, "units": len(unit_info),
             "events": conn.execute("SELECT COUNT(*) FROM work_events").fetchone()[0],
