@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from .. import domain, intake
+from .. import domain, intake, reconcile
 from ..domain import DomainError
 from ..web import Session, get_conn, office
 
@@ -889,6 +889,8 @@ def seed(conn, rnd) -> None:
             conn.execute("UPDATE orders SET variant = ? WHERE id = ?", (o["variant"], twin["id"]))
             cancel(conn, manager, o["id"], "Customer found a cheaper option")
             break
+    # 4. the latest orders came from the manager's sheet (for the re-upload demo)
+    reconcile.link_demo_orders(conn)
     conn.commit()
 
 
@@ -1037,3 +1039,44 @@ def intake_photo_get(photo_id: int, s: Session = Depends(office),
     if row is None:
         raise DomainError("No such photo.")
     return Response(row["data"], media_type=row["mime"])
+
+
+# --- the manager's sheet ------------------------------------------------------
+
+class SheetIn(BaseModel):
+    data_b64: str | None = None
+    text: str | None = None
+    filename: str = ""
+    book: str = ""
+
+
+@router.post("/api/orders/sheet")
+def sheet_propose(body: SheetIn, s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
+    if body.data_b64:
+        try:
+            data: bytes | str = base64.b64decode(body.data_b64.split(",")[-1], validate=True)
+        except (binascii.Error, ValueError):
+            raise DomainError("The file did not arrive whole. Send it again.")
+    elif body.text:
+        data = body.text
+    else:
+        raise DomainError("Choose the sheet file (.xlsx or .csv).")
+    return reconcile.propose(conn, s.person_id, data, body.filename, body.book)
+
+
+class DecisionsIn(BaseModel):
+    decisions: dict[str, str] = {}
+
+
+@router.post("/api/orders/sheet/{action_id}/apply")
+def sheet_apply(action_id: int, body: DecisionsIn, s: Session = Depends(office),
+                conn=Depends(get_conn)) -> dict:
+    return reconcile.apply(conn, s.person_id, action_id, body.decisions)
+
+
+@router.get("/api/orders/sheet/demo.xlsx")
+def sheet_demo(s: Session = Depends(office), conn=Depends(get_conn)) -> Response:
+    """The demo manager's sheet, a day later, with everything a real sheet does."""
+    return Response(reconcile.demo_sheet(conn), headers={
+        "Content-Disposition": f'attachment; filename="{reconcile.DEMO_BOOK}.xlsx"'},
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

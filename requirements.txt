@@ -3,3 +3,4 @@ uvicorn[standard]==0.54.0
 tzdata
 pytest
 httpx
+openpyxl
