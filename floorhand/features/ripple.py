@@ -482,6 +482,10 @@ def seed(conn, rnd):
     for m in conn.execute("SELECT id,kind FROM materials"):
         cost = {"foam": 7, "fabric": 9, "frame": 24, "fittings": 3}.get(m["kind"], 4)
         conn.execute("INSERT OR IGNORE INTO ripple_material_costs VALUES(?,?)", (m["id"], cost))
+
+
+def seed_finalize(conn, rnd):
+    """Build the stored demo scenario only after every feature has seeded its work."""
     who = conn.execute("SELECT id FROM people WHERE role='owner' LIMIT 1").fetchone()
     if who and not conn.execute("SELECT 1 FROM agent_actions WHERE kind='ripple'").fetchone():
         conn.commit()

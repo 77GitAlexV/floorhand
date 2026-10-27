@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from .. import domain, intake, models
 from ..domain import DomainError
 from ..models import BudgetStop
-from ..web import Session, get_conn, office, worker
+from ..web import Session, get_conn, office, session, worker
 from . import marking as mk
 
 SCHEMA = """
@@ -362,7 +362,8 @@ class TextIn(BaseModel):
 
 
 @router.get('/api/slang/catalog')
-def catalog_route(s: Session = Depends(worker), conn=Depends(get_conn)):
+def catalog_route(s: Session = Depends(session), conn=Depends(get_conn)):
+    """Office and workers may read words; proposing work still requires a worker."""
     return {'ok': True, **catalog(conn)}
 
 

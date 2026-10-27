@@ -133,7 +133,15 @@ modules.set(path.join(rootPath, "core.js"), quiet);
 for (const screen of ["channels", "shelf", "live", "outbox", "tablet", "login", "me", "work"]) {
   const mod = await moduleAt(path.join(rootPath, "screens", screen + ".js")); await mod.evaluate();
 }
+// Evaluate the complete entry point so merged screens resolve their real exports.
+const registry = await moduleAt(path.join(rootPath, "screens", "index.js"));
+await registry.evaluate();
 const screens = new Map(core.screenList().map(s => [s.id, s]));
+for (const file of (await readFile(path.join(rootPath, "screens", "index.js"), "utf8")).matchAll(/import "\.\/([^\"]+)\.js"/g)) {
+  const source = await readFile(path.join(rootPath, "screens", file[1] + ".js"), "utf8");
+  const id = source.match(/registerScreen\(\{\s*id:\s*["']([^"']+)["']/)?.[1];
+  assert(id && screens.has(id), `${file[1]} must register when the entry point loads`);
+}
 for (const role of ["owner", "manager"]) {
   const nav = core.navFor({ role, stage_id: null }).map(s => s.id);
   for (const id of ["channels", "shelf", "outbox", "tablet"]) assert(nav.includes(id));
@@ -148,6 +156,31 @@ function context() {
   return { query: new URLSearchParams(), params: {}, me: {}, isActive: () => active, refresh() {},
     onDispose: fn => disposers.push(fn), dispose() { active = false; disposers.forEach(fn => fn()); } };
 }
+// Both integrations survive the complete screen graph in EN/RU and a gate outage.
+const scenario = { id: 301, kind: "ripple", currency: "$", headline: { en: "Demo ripple", ru: "Демо-сбой" },
+  movements: [], starvation: [], options: [{ id: "wait", label: { en: "Wait", ru: "Подождать" } }], why: [] };
+for (const lang of ["en", "ru"]) for (const gateOk of [true, false]) for (const id of ["floor", "today"]) {
+  core.state.lang = lang; core.state.me = { role: "owner", stage_id: null };
+  const root = new Element(), ctx = context(); ctx.me = core.state.me; calls = [];
+  transport = url => {
+    if (url === "/api/gate/summary") return reply({ message: "FACT: gate <demo>", message_ru: "ФАКТ: вход <демо>" }, gateOk ? 200 : 503);
+    if (url === "/api/floor") return reply([]);
+    if (url === "/api/owner/today") return reply({ date: "2026-10-27", summary: { open_orders: 0, ready: 0, late: 0, shortages: 0, done_today: 0, capacity: 0 }, cards: [scenario], decided: [] });
+    if (url.startsWith("/api/owner/morning")) return reply({ head: "Demo", lines: [] });
+    if (url === "/api/rush/catalog") return reply({ products: [], customers: [] });
+    if (url === "/api/ripple/cards") return reply({ cards: [scenario] });
+    throw new Error(`Unexpected integration request: ${url}`);
+  };
+  await screens.get(id).render(root, ctx);
+  assert(calls.some(c => c.url === "/api/gate/summary"));
+  assert.equal(root.innerHTML.includes('href="#/gate"'), gateOk);
+  assert(root.querySelector("[data-report]"), `${id} retains the disruption form`);
+  assert(root.querySelector("[data-whatif-pick]"), `${id} retains stored ripple decisions`);
+  assert(root.querySelector("[data-rush]").textContent.includes(lang === "ru" ? "Срочный заказ" : "Urgent order"));
+  if (gateOk) assert(root.innerHTML.includes(lang === "ru" ? "ФАКТ: вход &lt;демо&gt;" : "FACT: gate &lt;demo&gt;"));
+  ctx.dispose();
+}
+core.state.lang = "ru";
 const metric = value => ({ tag: "FACT", value });
 const offer = { id: 91, product: "Demo cloud", message: "Launch ESTIMATE 2", message_ru: "Запустить ОЦЕНКА 2" };
 const overview = { capacity: { available_launch_qty: metric(2) }, items: [], assumptions: { en: "Rules", ru: "Правила" }, imports: [], proposals: [offer] };

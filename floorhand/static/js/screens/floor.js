@@ -31,7 +31,7 @@ registerScreen({
     const gate = await api('/api/gate/summary');
     root.innerHTML = `
       <header class="head"><div><h1>${t("floor")}</h1><p class="sub">${esc(fmtDate(new Date().toISOString(), { withDay: true }))}</p></div></header>
-      <p class="pill warn">${esc(document.documentElement.lang === 'ru' ? gate.message_ru : gate.message)}</p>
+      ${gate.ok ? `<a class="pill warn" href="#/gate">${esc(gate.message)}</a>` : ""}
       <div class="stats">
         ${stat(t("inQueue"), totals.q)}
         ${stat(t("doneToday"), totals.d, { sub: `${t("capacity")}: ${totals.c}` })}

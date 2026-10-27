@@ -22,6 +22,7 @@ def conn(tmp_path, monkeypatch):
     db.init(c)
     c.executescript("""
         INSERT INTO settings VALUES('tz','Asia/Bangkok'),('currency','$');
+        INSERT INTO settings VALUES('fabrics','["Demo weave"]'),('frames','["Demo finish"]');
         INSERT INTO stages VALUES(1,'cut','Cutting','Раскрой',1,2),(2,'uph','Upholstery','Обивка',2,2);
         INSERT INTO people(id,name,role,stage_id) VALUES
             (1,'Demo Cutter','worker',1),(2,'Demo Upholsterer','worker',2),
@@ -41,7 +42,7 @@ def conn(tmp_path, monkeypatch):
 
 def order(conn, qty=2, customer=1, due="2026-10-30"):
     return domain.create_order(conn, product_id=1, qty=qty, customer_id=customer, due_date=due,
-                               variant="", source="test")
+                               variant="Demo weave · Demo finish", source="test")
 
 
 def propose(conn, text="saw is broken for 2 days", key="r1"):
