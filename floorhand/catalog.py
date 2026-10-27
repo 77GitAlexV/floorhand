@@ -258,8 +258,9 @@ def _card(p: dict, cur: str) -> str:
     rates = ", ".join(f"{r['name_en']} {cur}{r['amount']}" if r["amount"] is not None
                       else f"{r['name_en']} (rate?)" for r in p["rates"])
     if a == "add_product":
-        price = f"{cur}{p['price']['value']}" if p["price"]["value"] is not None else "price?"
-        text = f"Add {p['kind']['value']} “{p['name']['value']}”, sells for {price}."
+        price = (f"sells for {cur}{p['price']['value']}" if p["price"]["value"] is not None
+                 else "price not given: type it below")
+        text = f"Add {p['kind']['value']} “{p['name']['value']}”, {price}."
         if rates:
             text += f" Rates: {rates}."
     else:

@@ -292,6 +292,7 @@ async function renderOrders() {
     ${r.orders.length ? "" : `<p class="empty">${t("nothingFound")}</p>`}`;
   bindLang();
   bindIntake();
+  if (window.FH_ordersExtras) FH_ordersExtras();  // orders-ui.js: photo, sheet, catalog
   if (state.proposal) renderProposal(state.proposal);
   $app.querySelectorAll("[data-order]").forEach(el => el.onclick = () => {
     state.order = Number(el.dataset.order); renderOrders();
@@ -453,6 +454,7 @@ async function renderOrder(id) {
         ${esc(h.person)}${h.kind === "undo" ? ` · <b>${t("undone")}</b>` : ""}</li>`).join("")}</ul>
     </details>`;
   document.getElementById("back").onclick = () => { state.order = null; renderOrders(); };
+  if (window.FH_orderMore) FH_orderMore(o);  // orders-ui.js: change, rework, cancel, comments
   const toShip = document.getElementById("toShip");
   if (toShip) toShip.onclick = () => {
     state.order = null; state.shipTo = o.customer_id; state.tab = "shipping"; render();
