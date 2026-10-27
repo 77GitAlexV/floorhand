@@ -1,4 +1,5 @@
 """HTTP API and static files. Run: uvicorn floorhand.main:app --reload"""
+import os
 import secrets
 from html import escape as esc
 from pathlib import Path
@@ -75,7 +76,8 @@ def me(s: Session = Depends(session), conn=Depends(get_conn)) -> dict:
     shop = conn.execute("SELECT value FROM settings WHERE key = 'shop_name'").fetchone()
     return {"id": who["id"], "name": who["name"], "role": who["role"],
             "lang": who["lang"], "tablet": s.tablet, "stage_id": s.stage_id,
-            "shop": shop["value"] if shop else ""}
+            "shop": shop["value"] if shop else "",
+            "demo": os.environ.get("FLOORHAND_DEMO") == "1"}
 
 
 # --- worker ---------------------------------------------------------------

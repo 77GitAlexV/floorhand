@@ -1,0 +1,52 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      FLOORHAND_DB: /data/floorhand.db
+      FLOORHAND_DEMO: ${FLOORHAND_DEMO:-1}
+      FLOORHAND_META_LIVE: ${FLOORHAND_META_LIVE:-0}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      FLOORHAND_BUDGET_USD: ${FLOORHAND_BUDGET_USD:-120}
+    volumes:
+      - app_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env to your public DNS hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:
