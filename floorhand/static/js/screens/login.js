@@ -2,6 +2,7 @@
 // the shared tablet option hides money for everyone who marks on it.
 import { registerScreen, addStrings, api, t, esc, name, state, setLang, flash, render, go } from "../core.js";
 import { icon, avatar, sheet, brandMark } from "../ui.js";
+import { tabletLogin } from "./tablet.js";
 
 addStrings({
   en: {
@@ -25,6 +26,7 @@ addStrings({
 registerScreen({
   id: "login", roles: [], nav: false, title: lang => lang === "ru" ? "Вход" : "Sign in",
   async render(root) {
+    if (await tabletLogin(root)) return;
     const r = await api("/api/demo/people");
     const people = r.list || [];
     const office = people.filter(p => !p.stage);

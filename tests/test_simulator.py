@@ -259,13 +259,14 @@ def test_permissions_default_off_and_start_stop_idempotent(shop):
     app = app_for_shop()
     with TestClient(app) as client:
         assert not app.state.floorhand_simulator.running
-        for url in ("/api/sim/status", "/api/live"):
+        for url in ("/api/sim/status", "/api/live", "/api/live/snapshot"):
             assert client.get(url).status_code == 401
         for action in ("start", "stop"):
             assert client.post(f"/api/sim/{action}").status_code == 401
         for person, status_code in ((11, 403), (90, 200), (99, 200)):
             client.cookies.set(COOKIE, login(path, person, str(person)))
             assert client.get("/api/sim/status").status_code == status_code
+            assert client.get("/api/live/snapshot").status_code == status_code
             if person != 99:
                 assert client.post("/api/sim/start").status_code == 403
                 assert client.post("/api/sim/stop").status_code == 403
@@ -351,7 +352,10 @@ def test_hub_catches_human_work_orders_shipments_without_money_or_duplicates(sho
         assert [name for name, _ in events] == ["marked"] * 3 + ["order_created", "shipment"]
         assert events[0][1]["worker"] == "DemoLumo11"
         assert events[0][1]["number"] == 102 and events[0][1]["stage_ru"]
+        assert events[0][1]["product"] == "Imaginary cloud stool"
+        assert events[0][1]["seq"] == 1 and events[0][1]["created_at"]
         assert events[-1][1]["numbers"] == [102]
+        assert all(data["created_at"] for _, data in events)
         assert all(data["fact"] == "FACT" and data["message_ru"] for _, data in events)
         encoded = json.dumps(events)
         assert not any(key in encoded for key in ("amount", "price", "total", "paid"))
@@ -359,6 +363,39 @@ def test_hub_catches_human_work_orders_shipments_without_money_or_duplicates(sho
         assert listener.empty()
         hub.unsubscribe(listener)
         assert not hub.listeners
+
+
+def test_live_snapshot_has_recent_marks_late_orders_and_shop_time_without_money(shop):
+    path, at = shop
+    with closing(db.connect(path)) as conn:
+        conn.execute("UPDATE orders SET due_date = '2026-10-26'")
+        conn.commit()
+        unit = conn.execute("SELECT id FROM units ORDER BY id LIMIT 1").fetchone()[0]
+        event = domain.mark_done(conn, 11, unit)
+        domain.undo(conn, 11, event.event_id)
+        before = conn.total_changes
+        data = sim.live_snapshot(conn)
+        assert conn.total_changes == before
+        assert data["date"] == "2026-10-27" and data["as_of"] == at.isoformat(timespec="seconds")
+        assert [m["type"] for m in data["marks"]] == ["undo", "marked"]
+        assert data["marks"][0]["product"] == "Imaginary cloud stool"
+        assert data["late"][0]["late_days"] == 1
+        assert data["stages"] == domain.floor_overview(conn)
+        assert data["message"] and data["message_ru"] and data["fact"] == "FACT"
+        encoded = json.dumps(data)
+        assert not any(key in encoded for key in ("amount", "price", "total", "paid", "currency"))
+
+
+def test_live_snapshot_empty_shop_and_recent_history_bound(shop):
+    path, _ = shop
+    with closing(db.connect(path)) as conn:
+        assert sim.live_snapshot(conn)["marks"] == []
+        units = conn.execute("SELECT id FROM units ORDER BY id").fetchall()
+        for unit in units:
+            domain.mark_done(conn, 11, unit["id"])
+        data = sim.live_snapshot(conn)
+        assert len(data["marks"]) == 8
+        assert [m["seq"] for m in data["marks"]] == list(range(12, 4, -1))
 
 
 def test_bounded_pubsub_tells_slow_clients_to_refresh():

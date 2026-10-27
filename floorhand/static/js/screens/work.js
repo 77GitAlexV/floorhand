@@ -80,6 +80,7 @@ registerScreen({
         ${btn({ label: t("eveningAdd"), icon: "plus", kind: "ghost", attrs: 'id="mkOther"' })}
         ${btn({ label: t("mkAddMissing"), icon: "clock", kind: "ghost", attrs: 'id="mkMissing"' })}
         ${btn({ label: t("mkPhoto"), icon: "camera", kind: "ghost", attrs: 'id="mkPhoto"' })}
+        ${btn({ label: t("mkAudio"), icon: "mic", kind: "ghost", attrs: 'id="mkAudio"' })}
       </div>
       <div class="dock"><div class="dock-inner">
         ${btn({ label: t("scan"), icon: "scan", kind: "secondary", attrs: 'id="mkScan"' })}
@@ -135,6 +136,7 @@ registerScreen({
     root.querySelector("#mkMissing")?.addEventListener("click", () => M.addMissing(ctx));
     root.querySelector("#mkOther")?.addEventListener("click", () => M.otherWork(ctx));
     root.querySelector("#mkPhoto")?.addEventListener("click", () => M.photo(ctx));
+    root.querySelector("#mkAudio")?.addEventListener("click", () => M.audio(ctx));
     root.querySelector("#mkScan")?.addEventListener("click", () => M.scanSheet(ctx));
     root.querySelector("#mkSpeak")?.addEventListener("click", () => M.speak(ctx));
     M.queueBar(root.querySelector("#mkQueue"));
