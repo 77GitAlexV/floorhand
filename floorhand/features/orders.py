@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from .. import domain, intake, reconcile
+from .. import catalog, domain, intake, reconcile
 from ..domain import DomainError
 from ..web import Session, get_conn, office
 
@@ -1080,3 +1080,26 @@ def sheet_demo(s: Session = Depends(office), conn=Depends(get_conn)) -> Response
     return Response(reconcile.demo_sheet(conn), headers={
         "Content-Disposition": f'attachment; filename="{reconcile.DEMO_BOOK}.xlsx"'},
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+# --- the catalog by words ------------------------------------------------------
+
+class CatalogIn(BaseModel):
+    text: str
+
+
+@router.post("/api/orders/catalog")
+def catalog_propose(body: CatalogIn, s: Session = Depends(office),
+                    conn=Depends(get_conn)) -> dict:
+    return catalog.propose(conn, s.person_id, body.text)
+
+
+class CatalogApplyIn(BaseModel):
+    price: int | None = None
+    rates: dict[str, int] = {}
+
+
+@router.post("/api/orders/catalog/{action_id}/apply")
+def catalog_apply(action_id: int, body: CatalogApplyIn, s: Session = Depends(office),
+                  conn=Depends(get_conn)) -> dict:
+    return catalog.apply(conn, s.person_id, action_id, body.price, body.rates)
