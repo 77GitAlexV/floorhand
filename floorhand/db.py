@@ -149,6 +149,21 @@ CREATE TABLE IF NOT EXISTS agent_actions (
     result      TEXT
 );
 
+-- Every paid model call, priced at call time. The budget guard sums this.
+CREATE TABLE IF NOT EXISTS model_calls (
+    id             INTEGER PRIMARY KEY,
+    at             TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    purpose        TEXT NOT NULL,
+    input_tokens   INTEGER NOT NULL DEFAULT 0,
+    cached_tokens  INTEGER NOT NULL DEFAULT 0,
+    output_tokens  INTEGER NOT NULL DEFAULT 0,
+    units          REAL NOT NULL DEFAULT 0,     -- images or audio seconds
+    cost_micro     INTEGER NOT NULL,            -- millionths of a dollar
+    estimated      INTEGER NOT NULL DEFAULT 0,  -- 1 = usage missing, charged the estimate
+    ok             INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     person_id  INTEGER NOT NULL REFERENCES people(id),
