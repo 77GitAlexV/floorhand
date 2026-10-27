@@ -67,3 +67,9 @@ Missing / Не сделано:
 - This is a development corpus used to improve rules, not independent held-out evidence. General Russian morphology, arbitrary catalogs, and unrestricted conversation history need further cases. / Набор использован для разработки правил; это не независимая отложенная выборка. Произвольная русская морфология, другие каталоги и сложная история переписки требуют дополнительных примеров.
 - Weekdays resolve to the upcoming occurrence; `next Friday` on Friday advances a week. `к 15-му` uses the next occurrence of that day of the month. Ambiguous multi-order quantity corrections ask which order changed. Conflicting dates ask rather than infer a correction. / День недели означает ближайшее наступление; «следующая пятница» в пятницу — через неделю. «К 15-му» означает ближайшее 15-е число. При неоднозначной поправке нескольких заказов система задаёт вопрос; конфликтующие даты тоже требуют уточнения.
 - Case alignment is bounded to at most 16 orders per message. Split larger evaluation inputs. Unknown variants can require revising the source, rather than choosing a guessed material. / Сопоставление ограничено 16 заказами на сообщение; большие примеры нужно разбивать. Для неизвестного варианта может потребоваться уточнить исходный текст.
+
+## Held-out set (written by a different model, gpt-6-astra, without seeing the parser) — 27.10.2026
+tests/eval/intake_heldout.jsonl: 40 cases (20 EN, 20 RU), 60 orders, 384 fields. Offline rules:
+correct 255 (66.4%) · asked 56 (14.6%) · SILENT ERRORS 9 (2.3%) · missed 64 (16.7%).
+Silent errors: customer 3, due date 4, frame 2. The 95% / 0% on the author's own set is optimistic;
+this is the honest offline baseline. Muse Spark is to be measured on the same set once credits arrive.
