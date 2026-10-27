@@ -671,3 +671,15 @@ def test_answers_in_the_workers_language(conn):
     assert p["message"].startswith("Понял так:")
     with pytest.raises(DomainError, match="Заказа №99999 нет"):
         mk.mark(conn, me, code="99999")
+
+
+def test_server_voice_audio_keeps_model_attribution_and_requires_yes(conn, monkeypatch):
+    order, (unit,) = waiting_order(conn, "uph")
+    actor = Actor(worker_at(conn, "uph"))
+    before = events(conn)
+    monkeypatch.setattr(mk.models, "transcribe", lambda *a, **k: f"{order['number']} done")
+    result = mk.voice_audio(conn, actor, b"invented-audio", "audio/wav", None)
+    assert result["status"] == "proposal" and result["items"][0]["unit_id"] == unit
+    assert events(conn) == before
+    row = conn.execute("SELECT model FROM agent_actions WHERE id = ?", (result["id"],)).fetchone()
+    assert row["model"] == "muse-voice-transcribe-1.0+rules"

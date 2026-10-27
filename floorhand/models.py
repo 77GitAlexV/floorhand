@@ -281,6 +281,9 @@ def request_units(conn, purpose, model, units, path, *, body=None, fields=None, 
     return _request(conn, purpose, model, worst, send, account, units)
 
 
+VOICE = "muse-voice-transcribe-1.0"
+
+
 def transcribe(conn: sqlite3.Connection, purpose: str, audio: bytes, mime: str, *,
                language: str | None = None) -> str:
     """Keep marking on the shared, reserved-budget voice client."""
