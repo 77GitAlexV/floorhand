@@ -117,6 +117,44 @@ def respond(conn: sqlite3.Connection, purpose: str, input_: list | str, *,
     return data
 
 
+VOICE = "muse-voice-transcribe-1.0"
+VOICE_MAX_SECONDS = 60
+
+
+def transcribe(conn: sqlite3.Connection, purpose: str, audio: bytes, mime: str, *,
+               language: str | None = None) -> str:
+    """Speech to text with Muse Voice Transcribe under the budget.
+
+    Billed per audio second. We do not decode audio here, so the worst case is the
+    longest clip we accept (VOICE_MAX_SECONDS); a worker's phrase is 2-5 seconds.
+    Request shape follows the dev.meta.ai docs as read on 27.10.2026 (an
+    /audio/transcriptions call with base64 audio); check it before the first live call.
+    """
+    import base64
+    if len(audio) > 2_000_000:
+        raise BudgetStop("Recording is too long; keep it under a minute.")
+    worst = unit_cost_micro(VOICE, VOICE_MAX_SECONDS)
+    check(conn, worst)
+    body = {"model": VOICE, "audio": base64.b64encode(audio).decode(), "mime_type": mime}
+    if language:
+        body["language"] = language
+    try:
+        data = _post("/audio/transcriptions", body, timeout=60)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        _log(conn, VOICE, purpose, units=VOICE_MAX_SECONDS, cost_micro=worst,
+             estimated=True, ok=False)
+        raise BudgetStop(f"Meta API call failed: {exc}") from exc
+    seconds = data.get("duration") or (data.get("usage") or {}).get("seconds")
+    if seconds is None:
+        _log(conn, VOICE, purpose, units=VOICE_MAX_SECONDS, cost_micro=worst,
+             estimated=True, ok=True)
+    else:
+        seconds = min(float(seconds), VOICE_MAX_SECONDS)
+        _log(conn, VOICE, purpose, units=seconds, cost_micro=unit_cost_micro(VOICE, seconds),
+             estimated=False, ok=True)
+    return str(data.get("text") or "")
+
+
 def budget_status(conn: sqlite3.Connection) -> dict:
     spent = spent_micro(conn)
     return {"live": live(), "spent_usd": spent / 1e6, "budget_usd": budget_micro() / 1e6,
