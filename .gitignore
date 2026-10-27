@@ -5,3 +5,4 @@ data/
 .pytest_cache/
 .env
 .deploy-maintenance.lock
+.merge-cx/
