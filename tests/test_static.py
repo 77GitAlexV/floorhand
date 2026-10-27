@@ -25,7 +25,7 @@ def _bundles(src: str):
 
 
 def test_every_string_exists_in_both_languages():
-    files = [STATIC / "js" / "core.js", *SCREENS.glob("*.js")]
+    files = [*(STATIC / "js").glob("*.js"), *SCREENS.glob("*.js")]
     checked = 0
     for f in files:
         for en, ru in _bundles(f.read_text(encoding="utf-8")):

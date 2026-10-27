@@ -1,7 +1,8 @@
 // Worker "Work": one big button on the work handed to you; money for today on
 // the same screen; free work to take; done today with a visible undo.
 import { registerScreen, addStrings, api, t, esc, name, state, money, fmtDate, pcs, flash, toast, idem } from "../core.js";
-import { icon, btn, sheet, empty, comingSoon, bindSoon } from "../ui.js";
+import { icon, btn, sheet, empty, bindSoon } from "../ui.js";
+import * as M from "../marking.js";
 
 addStrings({
   en: {
@@ -55,13 +56,14 @@ registerScreen({
       : `<span class="big">${pcs(w.today.count)}</span>`;
     const bump = sessionStorage.getItem("fh_bump") === "1";
     if (bump) sessionStorage.removeItem("fh_bump");
-    const hour = new Date().getHours();
-    const evening = hour >= 16 && w.today.count > 0 && !sessionStorage.getItem("fh_evening_ok");
+    // End-of-day check from the server (shop time, 16:00), not from the phone clock.
+    const dc = await M.dayCheck();
+    const evening = !!dc;
     root.innerHTML = `
       <header class="work-head"><h1>${esc(name(w.stage))}</h1><div class="date">${esc(fmtDate(w.date, { withDay: true }))}<br><span class="muted">${esc(w.person.name)}</span></div></header>
       <div class="work-today"><span class="lbl">${t("today")}</span>${bump ? todayLine.replace('class="big"', 'class="big bump"') : todayLine}${w.today.price_pending ? `<span class="pend">· ${w.today.price_pending} ${t("pricePending")}</span>` : ""}</div>
-      ${evening ? `<div class="evening">${icon("clock")}<span class="grow">${t("evening", { n: w.today.count })}</span>
-        ${btn({ label: t("eveningYes"), kind: "primary", attrs: 'id="evYes"' })}${btn({ label: t("eveningAdd"), kind: "secondary", attrs: "data-soon" })}</div>` : ""}
+      ${evening ? `<div class="evening">${icon("clock")}<span class="grow">${esc(dc.message)}</span>
+        ${btn({ label: t("eveningYes"), kind: "primary", attrs: 'id="evYes"' })}${btn({ label: t("mkAddMissing"), kind: "secondary", attrs: 'id="evAdd"' })}</div>` : ""}
       <h2 class="sec">${t("assigned")} <b>${w.mine.length}</b></h2>
       ${w.mine.length ? w.mine.map(o => card(o, w, "mine")).join("") : empty(t("nothingAssigned"), "work")}
       <details class="disc" ${w.mine.length ? "" : "open"}><summary>${t("free", { stage: name(w.stage) })} <span class="count">${w.free.length}</span>${icon("chevron", "chev")}</summary>
@@ -73,15 +75,29 @@ registerScreen({
           ${d.amount != null ? `<span class="amt">${money(w.currency, d.amount)}</span>` : `<span class="amt muted"></span>`}
           <button type="button" class="link bad" data-undo="${d.event_id}" data-unit="${esc(d.unit)}">${t("undo")}</button></li>`).join("")}</ul>` : `<p class="muted">${t("nothingDone")}</p>`}</div>
       </details>
+      <div id="mkQueue"></div>
+      <div class="row-actions">
+        ${btn({ label: t("eveningAdd"), icon: "plus", kind: "ghost", attrs: 'id="mkOther"' })}
+        ${btn({ label: t("mkAddMissing"), icon: "clock", kind: "ghost", attrs: 'id="mkMissing"' })}
+        ${btn({ label: t("mkPhoto"), icon: "camera", kind: "ghost", attrs: 'id="mkPhoto"' })}
+      </div>
       <div class="dock"><div class="dock-inner">
-        ${btn({ label: t("scan"), icon: "scan", kind: "secondary", attrs: "data-soon" })}
-        ${btn({ label: t("speak"), icon: "mic", kind: "secondary", attrs: "data-soon" })}
+        ${btn({ label: t("scan"), icon: "scan", kind: "secondary", attrs: 'id="mkScan"' })}
+        ${btn({ label: t("speak"), icon: "mic", kind: "secondary", attrs: 'id="mkSpeak"' })}
       </div></div>`;
 
     root.querySelectorAll("[data-done]").forEach(b => b.onclick = async () => {
       b.disabled = true; b.classList.add("busy");
-      const r = await api("/api/work/done", { order_id: Number(b.dataset.done), idem_key: idem() });
+      const key = idem();
+      const r = await api("/api/work/done", { order_id: Number(b.dataset.done), idem_key: key });
       if (r.silent) return;
+      if (!r.ok && r.offline && window.FloorhandQueue) {
+        // No network: keep the tap on the phone with its own key and time; it sends itself.
+        const item = { order_id: Number(b.dataset.done), idem_key: key, method: "button" };
+        if (state.me && state.me.tablet) item.person_id = state.me.id;
+        window.FloorhandQueue.add(item);
+        toast(t("mkQueued")); b.disabled = false; b.classList.remove("busy"); return;
+      }
       if (!r.ok) { flash(false, r.message); b.disabled = false; b.classList.remove("busy"); return; }
       const stage = name(w.stage);
       const plus = r.amount != null ? money(w.currency, r.amount) : (w.show_money ? t("pricePending") : "");
@@ -114,7 +130,26 @@ registerScreen({
       flash(r.ok, r.ok ? `${t("undone")}: ${r.unit_label}` : r.message);
       ctx.refresh();
     });
-    root.querySelector("#evYes")?.addEventListener("click", () => { sessionStorage.setItem("fh_evening_ok", "1"); ctx.refresh(); });
+    root.querySelector("#evYes")?.addEventListener("click", () => M.confirmDay(ctx, dc.date));
+    root.querySelector("#evAdd")?.addEventListener("click", () => M.addMissing(ctx, dc.can_add_back_days));
+    root.querySelector("#mkMissing")?.addEventListener("click", () => M.addMissing(ctx));
+    root.querySelector("#mkOther")?.addEventListener("click", () => M.otherWork(ctx));
+    root.querySelector("#mkPhoto")?.addEventListener("click", () => M.photo(ctx));
+    root.querySelector("#mkScan")?.addEventListener("click", () => M.scanSheet(ctx));
+    root.querySelector("#mkSpeak")?.addEventListener("click", () => M.speak(ctx));
+    M.queueBar(root.querySelector("#mkQueue"));
+    // A hardware scanner types fast and ends with Enter: catch it anywhere on this screen.
+    let buf = "", last = 0;
+    onkeydown = e => {
+      if (state.screen !== "work" || document.getElementById("sheet").hidden === false) return;
+      const now = Date.now();
+      if (now - last > 80) buf = "";
+      last = now;
+      if (e.key === "Enter" && buf.length >= 3) { const c = buf; buf = ""; M.scanSheet(ctx, c); }
+      else if (e.key.length === 1) buf += e.key;
+    };
+    const pending = M.takePendingCode();
+    if (pending) M.scanSheet(ctx, pending);
     bindSoon(root, toast);
   },
 });

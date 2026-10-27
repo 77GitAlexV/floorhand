@@ -2,6 +2,7 @@
 import { state, t, esc, setShell, render, go, setLang, signOut, api, toast } from "./core.js";
 import { icon, avatar, brandMark } from "./ui.js";
 import "./screens/index.js";
+import { rememberCodeFromUrl } from "./marking.js";
 
 const shell = {
   render(root, { me, role, screen, nav }) {
@@ -54,4 +55,5 @@ addEventListener("fh:prefs", updateTheme);
 
 // Expose for the console and other modules that do not import.
 window.fh = { state, go, render, api, toast };
+rememberCodeFromUrl();   // a sheet QR lands on /?code=TOKEN
 render();

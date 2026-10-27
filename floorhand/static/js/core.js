@@ -85,7 +85,7 @@ export async function api(path, body, { method } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    return { ok: false, message: t("cantReach") };
+    return { ok: false, offline: true, message: t("cantReach") };
   }
   if (res.status === 401) {  // session gone: back to the board (unless we were only checking)
     const had = state.me !== null;
