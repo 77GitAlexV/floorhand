@@ -28,7 +28,13 @@ def load() -> list[APIRouter]:
 def seed_all(conn, rnd) -> None:
     """Let each feature add its demo data after the base workshop is built.
     A module opts in with `def seed(conn, rnd): ...`."""
+    finalizers = []
     for info in sorted(pkgutil.iter_modules(__path__), key=lambda m: m.name):
         mod = importlib.import_module(f"{__name__}.{info.name}")
         if callable(getattr(mod, "seed", None)):
             mod.seed(conn, rnd)
+        if callable(getattr(mod, "seed_finalize", None)):
+            finalizers.append(mod.seed_finalize)
+    # Stored forecasts must see every feature's demo records before taking a snapshot.
+    for finalize in finalizers:
+        finalize(conn, rnd)

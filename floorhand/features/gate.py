@@ -105,7 +105,7 @@ def assert_start(conn, order_id, lang='en'):
 def summary(conn):
     n = len(held_orders(conn))
     return {'ok': True, 'held_lines': n, 'basis': 'FACT',
-            'message': f'FACT: held at the gate: {n} lines.',
+            'message': f"FACT: held at the gate: {n} {'line' if n == 1 else 'lines'}.",
             'message_ru': f'ФАКТ: на входе задержано строк: {n}.'}
 
 

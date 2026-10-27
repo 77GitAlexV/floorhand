@@ -4,13 +4,13 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const source = fs.readFileSync(new URL("../floorhand/static/js/screens/handsfree.js", import.meta.url), "utf8")
-  .replace(/^import .*?;$/m, "const { registerScreen, api, state, esc, go } = core;");
+  .replace(/^import .*?;$/gm, "") + "";
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function surface(lang = "en", withSpeech = true) {
   const calls = [], recognizers = [], utterances = [], observers = [];
   let screen;
-  const state = { lang, screen: "handsfree", me: { stage_id: 4 } };
+  const state = { lang, screen: "handsfree", me: { role: "worker", stage_id: 4 } };
   const meaning = { product_id: 2, qty: 2, stage_id: 4, option: "curved legs" };
   let failDecision = false;
   const api = async (path, body) => {
@@ -42,8 +42,8 @@ async function surface(lang = "en", withSpeech = true) {
     observe() {}
     disconnect() { this.disconnected = true; }
   }
-  vm.runInNewContext(source, {
-    core: { registerScreen(value) { screen = value; }, api, state, esc: String, go(id) { state.screen = id; } },
+  vm.runInNewContext("const { registerScreen, api, state, esc, go, empty } = core;\n" + source, {
+    core: { registerScreen(value) { screen = value; }, api, state, esc: String, go(id) { state.screen = id; }, empty: String },
     window: { SpeechRecognition: withSpeech ? Recognition : undefined,
       speechSynthesis: { cancel() {}, speak(u) { utterances.push(u); } } },
     SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },

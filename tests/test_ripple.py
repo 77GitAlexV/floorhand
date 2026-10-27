@@ -21,7 +21,8 @@ def conn(tmp_path, monkeypatch):
     c = db.connect(tmp_path / "ripple.db")
     db.init(c)
     c.executescript("""
-        INSERT INTO settings VALUES('tz','Asia/Bangkok'),('currency','$');
+        INSERT INTO settings VALUES('tz','Asia/Bangkok'),('currency','$'),
+            ('fabrics','["Demo cloth"]'),('frames','["Demo oak"]');
         INSERT INTO stages VALUES(1,'cut','Cutting','Раскрой',1,2),(2,'uph','Upholstery','Обивка',2,2);
         INSERT INTO people(id,name,role,stage_id) VALUES
             (1,'Demo Cutter','worker',1),(2,'Demo Upholsterer','worker',2),
@@ -41,7 +42,7 @@ def conn(tmp_path, monkeypatch):
 
 def order(conn, qty=2, customer=1, due="2026-10-30"):
     return domain.create_order(conn, product_id=1, qty=qty, customer_id=customer, due_date=due,
-                               variant="", source="test")
+                               variant="Demo cloth · Demo oak", source="test")
 
 
 def propose(conn, text="saw is broken for 2 days", key="r1"):
@@ -64,6 +65,56 @@ def test_machine_ripple_and_starvation_hand_math(conn):
     assert 2 <= len(card["options"]) <= 3
     assert conn.execute("SELECT COUNT(*) FROM ripple_adjustments").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("sid", [1, 2])
+def test_two_day_outage_moves_every_order_queued_at_affected_stage(conn, sid):
+    queued = [order(conn, qty=1, due="2026-10-30") for _ in range(2)]
+    if sid == 2:
+        for uid, in conn.execute("SELECT id FROM units").fetchall():
+            domain.mark_done(conn, 1, uid)
+    stage = next(s for s in domain.stages(conn) if s["id"] == sid)
+    baseline = ripple.simulate(conn, [])
+    shock = {"stage_id": sid, "lost_capacity": stage["capacity"],
+             "start": "2026-10-28", "until": "2026-10-30"}
+    disrupted = ripple.simulate(conn, [{"shock": shock}])
+    assert {m["order_id"] for m in ripple.movements(baseline, disrupted)} >= set(queued)
+    assert {m["order_id"] for m in ripple.stage_movements(baseline, disrupted)} >= set(queued)
+
+
+def test_lateness_is_caused_by_shock_and_baseline_is_stated_separately(conn):
+    already_late = order(conn, qty=1, due="2026-10-27")
+    newly_late = order(conn, qty=1, due="2026-10-30")
+    card = ripple.build_card(conn, "saw is broken for 2 days", False)[0]
+    wait = card["options"][0]
+    assert wait["baseline_late_orders"] == 1
+    assert wait["late_orders"] == 1
+    assert wait["total_late_orders"] == 2
+    assert {m["order_id"] for m in card["movements"]} == {already_late, newly_late}
+    assert all(o["saved_orders"] <= 1 for o in card["options"])
+
+
+def test_downstream_buffer_keeps_final_eta_but_reports_queued_stage_delay(conn):
+    # Existing upholstery backlog absorbs two lost cutting days for a stock order.
+    backlog = order(conn, qty=8, due="2026-10-30")
+    for uid, in conn.execute("SELECT id FROM units WHERE order_id=?", (backlog,)).fetchall():
+        domain.mark_done(conn, 1, uid)
+    queued = order(conn, qty=1, customer=None, due=None)
+    card = ripple.build_card(conn, "saw is broken for 2 days", False)[0]
+    assert card["shock"]["stage_id"] == 1
+    assert not card["movements"]
+    assert {m["order_id"] for m in card["stage_movements"]} == {queued}
+    assert card["options"][0]["late_orders"] == 0
+    assert card["options"][0]["baseline_late_orders"] == 1
+
+
+def test_gate_requirement_change_invalidates_stored_scenario(conn):
+    order(conn)
+    aid, _ = propose(conn)
+    conn.execute("DELETE FROM product_requirements WHERE product_id=1")
+    conn.commit()
+    with pytest.raises(DomainError, match="queue changed"):
+        ripple.decide(conn, 3, aid, "wait")
 
 
 def test_starvation_clock_uses_ready_inventory(conn):

@@ -47,7 +47,7 @@ def snapshot(conn):
     """Invalidate a decision when any input to its promises changes."""
     tables = ("settings", "stages", "people", "products", "rates", "orders", "units",
               "work_events", "assignments", "shipment_lines", "payout_lines", "bom",
-              "materials", "stock_moves", "ripple_material_costs", "ripple_adjustments")
+              "materials", "stock_moves", "product_requirements", "ripple_material_costs", "ripple_adjustments")
     return digest({t: [tuple(r) for r in conn.execute(f"SELECT * FROM {t} ORDER BY rowid")]
                    for t in tables})
 
@@ -197,7 +197,27 @@ def movements(before, after):
 
 
 def late_count(plan):
-    return sum(bool(o["due"] and (o["eta"] is None or o["eta"] > o["due"])) for o in plan["orders"].values())
+    return len(late_orders(plan))
+
+
+def late_orders(plan):
+    """Compare order identities: an existing backlog is not caused by a new shock."""
+    return {oid for oid, o in plan["orders"].items()
+            if o["due"] and (o["eta"] is None or o["eta"] > o["due"])}
+
+
+def stage_movements(before, after):
+    """A downstream buffer can absorb a delayed start without moving the final ETA."""
+    def dates(plan):
+        grouped = {}
+        for task in plan["tasks"]:
+            key = (task["order_id"], task["stage_id"])
+            grouped[key] = max(grouped.get(key, ""), task["date"])
+        return grouped
+    old, new = dates(before), dates(after)
+    return [{"order_id": oid, "number": before["orders"][oid]["number"], "stage_id": sid,
+             "old_date": at, "new_date": new.get((oid, sid)), "tag": "ESTIMATE"}
+            for (oid, sid), at in old.items() if new.get((oid, sid)) != at]
 
 
 def parse(conn, text, use_model=True):
@@ -283,11 +303,15 @@ def build_card(conn, text, use_model=True):
     before = simulate(conn, base)
     change = {"shock": shock}
     after = simulate(conn, base + [change])
+    baseline_late = late_orders(before)
+    outage_late = late_orders(after) - baseline_late
     options = []
     def option(oid, label, adjustment, plan, cost):
         moves = movements(before, plan)
         return {"id": oid, "label": label, "adjustment": adjustment, "movements": moves,
-                "late_orders": late_count(plan), "saved_orders": max(0, late_count(after) - late_count(plan)),
+                "late_orders": len(late_orders(plan) - baseline_late),
+                "baseline_late_orders": len(baseline_late), "total_late_orders": late_count(plan),
+                "saved_orders": len(outage_late - late_orders(plan)),
                 "cost": cost, "cost_tag": "ESTIMATE", "penalties": None,
                 "notices": [m for m in moves if m["notify"]]}
     options.append(option("wait", tt("Wait for recovery", "Дождаться восстановления"), change, after, 0))
@@ -322,7 +346,9 @@ def build_card(conn, text, use_model=True):
     if fingerprint != snapshot(conn):
         raise DomainError("The queue changed during calculation; run again. / Очередь изменилась во время расчёта; повторите.")
     card = {"kind": "ripple", "currency": domain.currency(conn), "target_date": shock["start"], "headline": tt("Disruption: " + text, "Сбой: " + text),
-            "shock": shock, "movements": moved, "starvation": gaps, "options": options,
+            "shock": shock, "movements": moved, "stage_movements": stage_movements(before, after),
+            "stages": [{"id": s["id"], "name": tt(s["name_en"], s["name_ru"])} for s in domain.stages(conn)],
+            "starvation": gaps, "options": options,
             "numbers": [{"label": tt("orders move", "заказов сдвинуто"), "value": len(moved), "tag": "ESTIMATE"}],
             "why": [fact("Queue, live work marks and capacity are read from the shop records.", "Очередь, действующие отметки и мощность взяты из записей цеха."),
                     est("Forecast starts next workday: one stage per workday, even 08:00–16:00 shift. Late batch marks may change it. Other materials are assumed available.",
@@ -482,6 +508,10 @@ def seed(conn, rnd):
     for m in conn.execute("SELECT id,kind FROM materials"):
         cost = {"foam": 7, "fabric": 9, "frame": 24, "fittings": 3}.get(m["kind"], 4)
         conn.execute("INSERT OR IGNORE INTO ripple_material_costs VALUES(?,?)", (m["id"], cost))
+
+
+def seed_finalize(conn, rnd):
+    """The saved scenario must include demo events added by later feature seeds."""
     who = conn.execute("SELECT id FROM people WHERE role='owner' LIMIT 1").fetchone()
     if who and not conn.execute("SELECT 1 FROM agent_actions WHERE kind='ripple'").fetchone():
         conn.commit()

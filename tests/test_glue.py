@@ -75,6 +75,14 @@ def test_gate_blocks_queue_take_direct_mark_and_plan(conn):
     assert gate.summary(conn)['held_lines'] >= 1
 
 
+def test_gate_summary_uses_singular_line(conn, monkeypatch):
+    for n, label in [(0, 'lines'), (1, 'line'), (2, 'lines')]:
+        monkeypatch.setattr(gate, 'held_orders', lambda c, n=n: set(range(n)))
+        summary = gate.summary(conn)
+        assert summary['message'] == f'FACT: held at the gate: {n} {label}.'
+        assert str(n) in summary['message_ru']
+
+
 def test_family_defaults_and_new_catalog_products(conn):
     pouf, _ = new_order(conn, product='Round pouf', variant='velvet beige')
     chair, _ = new_order(conn, variant='velvet beige · oak')

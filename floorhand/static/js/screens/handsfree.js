@@ -1,12 +1,19 @@
 // A palm-sized voice surface; tap marking remains on the Work screen.
 import { registerScreen, api, state, esc, go } from "../core.js";
+import { empty } from "../ui.js";
 
 const words = (en, ru) => state.lang === "ru" ? ru : en;
 
 registerScreen({
-  id: "handsfree", roles: ["worker", "tablet"], icon: "mic",
+  id: "handsfree", roles: ["worker", "tablet", "office"], nav: false, icon: "mic",
   title: lang => lang === "ru" ? "Руки в клею" : "Glue mode",
   async render(root) {
+    if (!["worker"].includes(state.me.role) || state.me.stage_id == null) {
+      root.innerHTML = `<section class="panel stack"><h1>${words("Hands covered in glue", "Руки в клею")}</h1>
+        ${empty(words("Voice marking belongs to a worker and their stage. Sign in as a demo worker on a phone, then open Glue mode from Work.", "Голосовые отметки относятся к работнику и его этапу. Войдите на телефоне как демо-работник и откройте режим «Руки в клею» из работы."), "mic")}
+        <a class="btn secondary" href="#/today">${words("Back to Today", "На экран «Сегодня»")}</a></section>`;
+      return;
+    }
     const cat = await api("/api/slang/catalog");
     if (!cat.ok) { root.textContent = cat.message; return; }
     let proposal = null, recognition = null, listening = false, busy = false;
@@ -14,7 +21,7 @@ registerScreen({
       <style>
         .glue-mode {max-width:760px;margin:auto;text-align:center;padding-bottom:40px}
         .glue-mode button,.glue-mode select,.glue-mode input {min-height:72px;font-size:1.4rem;width:100%;touch-action:manipulation;margin:8px 0}
-        .glue-mode .palm {min-height:240px;font-size:2.2rem;border-radius:32px;user-select:none;-webkit-user-select:none}
+        .glue-mode .palm {min-height:240px;font-size:clamp(1.4rem,6vw,2.2rem);border-radius:32px;user-select:none;-webkit-user-select:none;overflow-wrap:anywhere}
         .glue-mode .sentence {font-size:clamp(1.7rem,5vw,3rem);line-height:1.25;min-height:160px;padding:20px 0}
         .glue-mode .yes-no {display:grid;grid-template-columns:1fr 1fr;gap:20px}
         .glue-mode [hidden] {display:none !important}
@@ -33,7 +40,7 @@ registerScreen({
         </div>
         <details id="glue-correction"><summary>${words("Correct what I meant", "Исправить смысл")}</summary>
           <form id="glue-fix">
-            <label>${words("Item", "Изделие")}<select name="product_id">${cat.products.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></label>
+            <label>${words("Item", "Изделие")}<select class="input" name="product_id">${cat.products.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></label>
             <label>${words("Quantity", "Количество")}<input name="qty" type="number" min="1" max="100" value="1" required></label>
             <label>${words("Stage", "Этап")}<select name="stage_id">${cat.stages.filter(s => s.id === state.me.stage_id).map(s => `<option value="${s.id}">${esc(state.lang === "ru" ? s.name_ru : s.name_en)}</option>`).join("")}</select></label>
             <label>${words("Option", "Вариант")}<select name="option"><option value="">${words("No option said", "Без уточнения варианта")}</option>${cat.options.map(o => `<option>${esc(o)}</option>`).join("")}</select></label>
@@ -41,8 +48,8 @@ registerScreen({
             <button class="btn secondary">${words("Read corrected proposal", "Прочитать исправление")}</button>
           </form>
         </details>
-        <details><summary>${words("Type the words instead", "Ввести фразу текстом")}</summary>
-          <form id="glue-type"><label>${words("Your words", "Ваши слова")}<input name="text" maxlength="500" required autocomplete="off"></label>
+        <details id="glue-typed"><summary>${words("Type the words instead", "Ввести фразу текстом")}</summary>
+          <form id="glue-type"><label>${words("Your words", "Ваши слова")}<input class="input" name="text" maxlength="500" required autocomplete="off"></label>
             <button class="btn secondary">${words("Understand", "Разобрать")}</button></form>
         </details>
         <button class="btn secondary" id="glue-back">${words("Back to tap marking", "К обычным отметкам")}</button>
@@ -51,6 +58,11 @@ registerScreen({
     const palm = root.querySelector("#glue-talk");
     const choice = root.querySelector("#glue-choice");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    function typedFallback(text) {
+      root.querySelector("#glue-typed").open = true;
+      sentence.textContent = text;
+      palm.textContent = words("TYPE BELOW", "ВВЕДИТЕ ТЕКСТ НИЖЕ");
+    }
     const live = () => root.isConnected && state.screen === "handsfree";
     function stop() { recognition?.abort(); recognition = null; listening = false; }
     const observer = new MutationObserver(() => {
@@ -115,14 +127,15 @@ registerScreen({
         } else understand(text);
       };
       recognition.onerror = () => {
-        if (live()) sentence.textContent = words("Microphone unavailable. Type the phrase below, or return to tap marking.", "Микрофон недоступен. Введите фразу ниже или вернитесь к обычным отметкам.");
+        if (live()) typedFallback(words("Microphone unavailable. Type the phrase below, or return to tap marking.", "Микрофон недоступен. Введите фразу ниже или вернитесь к обычным отметкам."));
       };
       recognition.onend = () => { listening = false; if (live()) palm.textContent = words("HOLD TO TALK", "ДЕРЖИТЕ И ГОВОРИТЕ"); };
       try { recognition.start(); listening = true; }
-      catch { sentence.textContent = words("Try the microphone again or type below.", "Попробуйте микрофон ещё раз или введите текст ниже."); }
+      catch { typedFallback(words("Try the microphone again or type below.", "Попробуйте микрофон ещё раз или введите текст ниже.")); }
     }
     palm.onpointerdown = event => {
       if (busy) return;
+      if (!SpeechRecognition) { root.querySelector("#glue-type input").focus(); return; }
       event.preventDefault(); palm.setPointerCapture(event.pointerId);
       window.speechSynthesis?.cancel();
       listen(!!proposal);
@@ -143,7 +156,7 @@ registerScreen({
         stage_id: Number(f.stage_id.value), option: f.option.value || null, component: f.component.value || null }));
     };
     root.querySelector("#glue-back").onclick = () => { stop(); go("work"); };
-    if (!SpeechRecognition) say(words("This browser has no speech recognition. Type below or use tap marking.", "В этом браузере нет распознавания речи. Введите текст ниже или используйте обычные отметки."));
+    if (!SpeechRecognition) typedFallback(words("This browser has no speech recognition. Type below or use tap marking.", "В этом браузере нет распознавания речи. Введите текст ниже или используйте обычные отметки."));
     try {
       const saved = JSON.parse(sessionStorage.getItem('fh_glue_proposal') || 'null');
       sessionStorage.removeItem('fh_glue_proposal');

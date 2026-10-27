@@ -77,6 +77,7 @@ registerScreen({
       </details>
       <div id="mkQueue"></div>
       <div class="row-actions">
+        <a class="btn secondary" href="#/handsfree">${icon("mic")}${state.lang === "ru" ? "Руки в клею" : "Glue mode"}</a>
         ${btn({ label: t("eveningAdd"), icon: "plus", kind: "ghost", attrs: 'id="mkOther"' })}
         ${btn({ label: t("mkAddMissing"), icon: "clock", kind: "ghost", attrs: 'id="mkMissing"' })}
         ${btn({ label: t("mkPhoto"), icon: "camera", kind: "ghost", attrs: 'id="mkPhoto"' })}

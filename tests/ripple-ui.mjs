@@ -8,18 +8,22 @@ const requests = [];
 let refreshes = 0, registered;
 const context = vm.createContext({console});
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
-const core = new vm.SyntheticModule(["api", "esc", "state", "idem", "flash", "registerScreen"], function () {
+const core = new vm.SyntheticModule(["api", "esc", "state", "idem", "flash", "registerScreen", "name", "t", "money", "fmtDate"], function () {
   this.setExport("api", async (path, body) => {requests.push({path, body}); return {ok: true};});
   this.setExport("esc", esc); this.setExport("state", state);
   this.setExport("idem", () => "test-key"); this.setExport("flash", () => {});
   this.setExport("registerScreen", screen => {registered = screen;});
+  this.setExport("name", x => x?.name_en || ""); this.setExport("t", x => x);
+  this.setExport("money", (cur, n) => `${cur}${n}`); this.setExport("fmtDate", x => x?.slice(0, 10) || "—");
 }, {context});
 const modules = {};
+const ui = new vm.SourceTextModule(fs.readFileSync("floorhand/static/js/ui.js", "utf8"), {context});
+await ui.link(() => core);
 async function read(name) {
   if (modules[name]) return modules[name];
   const module = new vm.SourceTextModule(fs.readFileSync(`floorhand/static/js/screens/${name}.js`, "utf8"), {context});
   modules[name] = module;
-  await module.link(async specifier => specifier === "../core.js" ? core : read(specifier.slice(2, -3)));
+  await module.link(async specifier => /(?:^|\/)core.js$/.test(specifier) ? core : /(?:^|\/)ui.js$/.test(specifier) ? ui : read(specifier.replace(/^\.\//, "").replace(/\.js$/, "")));
   return module;
 }
 const ripple = await read("ripple"); await ripple.evaluate();
