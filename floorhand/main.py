@@ -205,19 +205,11 @@ def invoice_page(shipment_id: int, s: Session = Depends(office),
     inv = domain.invoice(conn, shipment_id)
     cur = inv["currency"]
     rows = "".join(
-        f"<tr><td>{esc(l['label'])}</td><td>{esc(l['product'])}<br><small>{esc(l['variant'])}"
-        f"</small></td><td class=n>{cur}{l['price']}</td></tr>" for l in inv["lines"])
-    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Invoice {inv['id']}</title><style>
-body{{font:16px/1.4 system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#1d1d1b}}
-table{{width:100%;border-collapse:collapse}}td,th{{border-bottom:1px solid #ccc;padding:8px;text-align:left}}
-.n{{text-align:right;font-variant-numeric:tabular-nums}}@media print{{button{{display:none}}}}
-</style></head><body>
-<h1>{esc(inv['shop'])} — delivery note №{inv['id']}</h1>
-<p>{esc(inv['date'])} · To: <b>{esc(inv['customer'])}</b>, {esc(inv['city'] or '')}</p>
-<table><tr><th>Item</th><th>Product</th><th class=n>Price</th></tr>{rows}
-<tr><th colspan=2>Total</th><th class=n>{cur}{inv['total']}</th></tr>
-<tr><td colspan=2>Paid</td><td class=n>{cur}{inv['paid']}</td></tr>
-<tr><td colspan=2>Owed</td><td class=n>{cur}{inv['owed']}</td></tr></table>
-<p><button onclick="print()">Print</button></p>
-<script>addEventListener('load', () => print())</script></body></html>"""
+        f"<tr><td>{esc(l['label'])}</td><td>{esc(l['product'])}<small>{esc(l['variant'])}"
+        f"</small></td><td class=n>1</td><td class=n>{cur}{l['price']}</td></tr>" for l in inv["lines"])
+    # The look lives in static/print/invoice.html (+ print.css); only values go in here.
+    page = (STATIC / "print" / "invoice.html").read_text(encoding="utf-8")
+    return page.format(id=inv["id"], date=esc(inv["date"]), shop=esc(inv["shop"]),
+                       customer=esc(inv["customer"]), city=esc(inv["city"] or ""),
+                       rows=rows, cur=cur, total=inv["total"], paid=inv["paid"],
+                       owed=inv["owed"], payment=esc(inv["payment"]))

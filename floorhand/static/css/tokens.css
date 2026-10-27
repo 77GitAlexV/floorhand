@@ -1,0 +1,75 @@
+/* Floorhand design tokens — "Linen & Steel".
+   Warm paper, deep green machinery, rust only for the bottleneck.
+   Light is the default; dark follows prefers-color-scheme or data-theme. */
+:root {
+  --bg: #f3f0e8;
+  --bg-2: #e9e4d9;            /* wells, table headers, collapsed groups */
+  --surface: #fffdf8;         /* cards, panels */
+  --surface-2: #ffffff;       /* dialogs, menus */
+  --ink: #202a24;
+  --ink-2: #526057;
+  --ink-3: #657168;
+  --line: #d9d6ca;
+  --line-strong: #7b867b;
+  --brand: #245b43;
+  --brand-ink: #ffffff;
+  --brand-soft: #dceadd;
+  --good: #216340;
+  --good-soft: #e5f0e6;
+  --bad: #a12f2b;
+  --bad-soft: #fbeae6;
+  --warn: #765300;
+  --warn-soft: #fff1c7;
+  --hot: #a64424;
+  --hot-soft: #f8e7dc;
+  --sel: #dceadd;
+  --sel-ink: #173c29;
+  --focus: #175dad;
+  --screen-good: #216340;
+  --screen-bad: #a12f2b;
+  --shadow: 0 12px 32px rgba(32, 42, 36, .12);
+  --shadow-sm: 0 2px 6px rgba(32, 42, 36, .08);
+
+  --font: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, "Noto Sans", Arial, sans-serif;
+  --fs: 17px;                 /* office body; worker screens raise it */
+  --r-sm: 4px; --r: 8px; --r-lg: 12px; --r-xl: 16px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --t-press: 80ms; --t-state: 160ms; --t-open: 220ms; --t-panel: 240ms;
+  --tap: 56px;                /* minimum touch target on the floor */
+  --hero-h: 64px;             /* the worker's one big button */
+  --side-w: 216px;
+  --page-max: 1120px;
+}
+:root[data-size="b"] { --fs: 19px; }
+:root[data-size="c"] { --fs: 22px; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171c19; --bg-2: #111512; --surface: #222923; --surface-2: #2c352e;
+    --ink: #f4f1e8; --ink-2: #c0c9bf; --ink-3: #a0ada1;
+    --line: #3a453d; --line-strong: #829383;
+    --brand: #a8d5b5; --brand-ink: #152a1d; --brand-soft: #2a3f31;
+    --good: #9ddeb0; --good-soft: #263e2d;
+    --bad: #ffb4ac; --bad-soft: #492925;
+    --warn: #f2d17b; --warn-soft: #443a20;
+    --hot: #ffb18c; --hot-soft: #452f25;
+    --sel: #334d3a; --sel-ink: #e0f2e1; --focus: #9ac7ff;
+    --screen-good: #173f2b; --screen-bad: #702d29;
+    --shadow: 0 12px 32px rgba(0, 0, 0, .32); --shadow-sm: 0 2px 6px rgba(0, 0, 0, .3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171c19; --bg-2: #111512; --surface: #222923; --surface-2: #2c352e;
+  --ink: #f4f1e8; --ink-2: #c0c9bf; --ink-3: #a0ada1;
+  --line: #3a453d; --line-strong: #829383;
+  --brand: #a8d5b5; --brand-ink: #152a1d; --brand-soft: #2a3f31;
+  --good: #9ddeb0; --good-soft: #263e2d;
+  --bad: #ffb4ac; --bad-soft: #492925;
+  --warn: #f2d17b; --warn-soft: #443a20;
+  --hot: #ffb18c; --hot-soft: #452f25;
+  --sel: #334d3a; --sel-ink: #e0f2e1; --focus: #9ac7ff;
+  --screen-good: #173f2b; --screen-bad: #702d29;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .32); --shadow-sm: 0 2px 6px rgba(0, 0, 0, .3);
+}

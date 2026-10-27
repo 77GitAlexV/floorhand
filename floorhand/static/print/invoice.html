@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delivery note {id}</title>
+  <link rel="stylesheet" href="/static/print/print.css">
+</head>
+<body>
+<div class="doc">
+  <div class="tools"><button type="button" onclick="print()">Print</button></div>
+  <header class="doc-head">
+    <div class="wordmark"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="5" rx="1.5"/><rect x="4" y="13.5" width="24" height="5" rx="1.5" opacity=".75"/><rect x="4" y="21" width="15" height="5" rx="1.5" opacity=".5"/></svg>
+      <span>{shop}<small>Floorhand</small></span></div>
+    <div class="doc-title"><h1>Delivery note</h1><p>№ {id} · {date}</p></div>
+  </header>
+  <section class="parties">
+    <div><h2>From</h2><b>{shop}</b></div>
+    <div><h2>To</h2><b>{customer}</b><br>{city}</div>
+  </section>
+  <table>
+    <thead><tr><th>Item</th><th>Product · fabric · frame</th><th class="n">Qty</th><th class="n">Price</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+  <table class="totals">
+    <tr class="total"><td>Total</td><td class="n">{cur}{total}</td></tr>
+    <tr><td>Paid ({payment})</td><td class="n">{cur}{paid}</td></tr>
+    <tr><td>Owed</td><td class="n">{cur}{owed}</td></tr>
+  </table>
+  <section class="sign">
+    <div>Received by</div><div>Signature</div><div>Date</div>
+  </section>
+</div>
+<script>addEventListener('load', () => print())</script>
+</body>
+</html>

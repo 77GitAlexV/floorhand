@@ -1,0 +1,30 @@
+/* Printed documents: delivery note, job sheets. White paper, black ink, A4 portrait. */
+@page { size: A4 portrait; margin: 15mm; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: #fff; color: #000; font: 11pt/1.4 "Segoe UI", system-ui, -apple-system, Roboto, "Noto Sans", Arial, sans-serif; font-variant-numeric: tabular-nums lining-nums; }
+.doc { max-width: 190mm; margin: 0 auto; }
+.doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding-bottom: 12px; border-bottom: 2px solid #000; }
+.wordmark { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14pt; letter-spacing: -.02em; }
+.wordmark svg { width: 22px; height: 22px; fill: #000; }
+.wordmark small { display: block; font-weight: 400; font-size: 10pt; letter-spacing: 0; color: #333; }
+.doc-title { text-align: right; }
+.doc-title h1 { margin: 0; font-size: 20pt; letter-spacing: -.02em; line-height: 1.1; }
+.doc-title p { margin: 2px 0 0; font-size: 10pt; color: #333; }
+.parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 14px 0; font-size: 10pt; }
+.parties h2 { margin: 0 0 4px; font-size: 9pt; text-transform: uppercase; letter-spacing: .06em; color: #555; }
+.parties b { font-size: 12pt; }
+table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+thead { display: table-header-group; }
+th { text-align: left; font-size: 9pt; text-transform: uppercase; letter-spacing: .04em; color: #333; padding: 6px 8px; border-bottom: 1.5px solid #000; }
+td { padding: 8px; border-bottom: 1px solid #bbb; vertical-align: top; }
+tr { break-inside: avoid; }
+td small { display: block; color: #444; font-size: 9.5pt; }
+.n { text-align: right; white-space: nowrap; }
+.totals { margin-left: auto; width: 60%; margin-top: 12px; break-inside: avoid; }
+.totals td { border: 0; padding: 4px 8px; }
+.totals tr.total td { border-top: 1.5px solid #000; font-weight: 700; font-size: 13pt; padding-top: 8px; }
+.sign { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 10pt; break-inside: avoid; }
+.sign div { border-top: 1px solid #000; padding-top: 6px; color: #333; }
+.tools { margin: 0 0 16px; display: flex; justify-content: flex-end; }
+.tools button { font: inherit; font-weight: 700; min-height: 44px; padding: 0 18px; border: 1px solid #000; background: #fff; border-radius: 6px; cursor: pointer; }
+@media print { body { padding: 0; } .tools { display: none; } }
