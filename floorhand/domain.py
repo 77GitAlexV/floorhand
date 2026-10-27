@@ -463,6 +463,27 @@ def ship(conn: sqlite3.Connection, person_id: int, customer_id: int,
 
 # --- office: orders -------------------------------------------------------
 
+def create_order(conn: sqlite3.Connection, *, product_id: int, qty: int,
+                 customer_id: int | None, due_date: str | None, variant: str,
+                 source: str, commit: bool = True) -> int:
+    """New order with one unit row per piece. Number = last number + 1."""
+    if not 0 < qty <= 500:
+        raise DomainError("Quantity must be between 1 and 500.")
+    if conn.execute("SELECT 1 FROM products WHERE id = ?", (product_id,)).fetchone() is None:
+        raise DomainError("Unknown product.")
+    number = conn.execute("SELECT COALESCE(MAX(number), 100) + 1 FROM orders").fetchone()[0]
+    oid = conn.execute(
+        "INSERT INTO orders (number, product_id, variant, qty, customer_id, due_date, source, "
+        "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (number, product_id, variant, qty, customer_id, due_date, source,
+         now(conn).isoformat(timespec="seconds"))).lastrowid
+    conn.executemany("INSERT INTO units (order_id, seq) VALUES (?, ?)",
+                     [(oid, i) for i in range(1, qty + 1)])
+    if commit:
+        conn.commit()
+    return oid
+
+
 def _order_progress(conn: sqlite3.Connection) -> tuple[dict, dict]:
     """(order_id -> {stage_id: units done}, order_id -> units shipped)."""
     done: dict[int, dict[int, int]] = {}

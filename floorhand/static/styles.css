@@ -156,3 +156,19 @@ ul.items input { width: 24px; height: 24px; vertical-align: middle; margin-right
 #partialBox[hidden] { display: none; }
 #partialBox input { min-height: 48px; font: inherit; width: 140px; padding: 0 8px; }
 ul.plain li { padding: 4px 0; }
+
+/* --- intake ---------------------------------------------------------- */
+textarea.drop { width: 100%; font: inherit; color: var(--ink); resize: vertical; }
+.row .mid { flex: 1; }
+label.file { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.intake-split { margin-top: 12px; }
+pre.source { white-space: pre-wrap; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font: inherit; font-size: .9em; }
+mark { background: #fde9a8; border-radius: 3px; padding: 0 2px; }
+.card.intake.needs { border-left: 6px solid #e0a800; }
+.card.intake dl { display: grid; grid-template-columns: 9em 1fr; gap: 6px 10px; margin: 8px 0 0; }
+.card.intake dt { color: var(--muted); }
+.card.intake dt.st-check { color: #9a6b00; font-weight: 700; }
+.card.intake dd { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.card.intake .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.card.intake input[type=date] { min-height: 44px; font: inherit; }
+small.quote { color: var(--muted); font-style: italic; }

@@ -264,7 +264,12 @@ async function renderOrders() {
     <header class="bar"><h1>${t("orders")}</h1>${langSwitch()}</header>
     <section class="new">
       <h2>${t("newOrder")}</h2>
-      <div class="drop">${t("newOrderHint")}</div>
+      <textarea id="intakeText" class="drop" rows="4" placeholder="${t("newOrderHint")}">${esc(state.intakeText || "")}</textarea>
+      <div class="row">
+        <button type="button" class="mid" id="intakeGo">${t("readIt")}</button>
+        <label class="mid alt file">${t("pickTable")}<input type="file" id="intakeFile" accept=".csv,.tsv,.txt" hidden></label>
+      </div>
+      <div id="intakeOut"></div>
     </section>
     ${r.attention.length ? `<h2 class="hot">${t("attention")} · ${r.attention.length}</h2>
       <ul class="attention">${r.attention.slice(0, 8).map(o => `<li><button type="button" class="row" data-order="${o.id}">
@@ -286,6 +291,8 @@ async function renderOrders() {
       <td>${dueCell(o)}</td></tr>`).join("")}</tbody></table>
     ${r.orders.length ? "" : `<p class="empty">${t("nothingFound")}</p>`}`;
   bindLang();
+  bindIntake();
+  if (state.proposal) renderProposal(state.proposal);
   $app.querySelectorAll("[data-order]").forEach(el => el.onclick = () => {
     state.order = Number(el.dataset.order); renderOrders();
   });
@@ -300,6 +307,123 @@ async function renderOrders() {
       const again = document.getElementById("q");
       again.focus(); again.setSelectionRange(again.value.length, again.value.length);
     }, 250);
+  };
+}
+
+// --- office: order intake ------------------------------------------------
+
+function bindIntake() {
+  const box = document.getElementById("intakeText");
+  box.oninput = () => { state.intakeText = box.value; };
+  const go = async text => {
+    const btn = document.getElementById("intakeGo");
+    btn.disabled = true; btn.textContent = t("reading");
+    const r = await api("/api/intake", { text });
+    btn.disabled = false; btn.textContent = t("readIt");
+    if (!r.ok) { if (!r.silent) flash(false, r.message); return; }
+    state.proposal = r; state.picks = {};
+    renderProposal(r);
+  };
+  document.getElementById("intakeGo").onclick = () => go(box.value);
+  document.getElementById("intakeFile").onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    file.text().then(text => { box.value = text; state.intakeText = text; go(text); });
+  };
+  // Drop a table file straight onto the box.
+  box.ondragover = e => e.preventDefault();
+  box.ondrop = e => {
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    e.preventDefault();
+    file.text().then(text => { box.value = text; state.intakeText = text; go(text); });
+  };
+}
+
+function markQuotes(source, quotes) {
+  let html = esc(source);
+  [...new Set(quotes.filter(Boolean))].sort((a, b) => b.length - a.length).forEach(q => {
+    const eq = esc(q);
+    if (eq.length < 2) return;
+    html = html.split(eq).join(`\u0001${eq}\u0002`);
+  });
+  return html.replace(/\u0001/g, "<mark>").replace(/\u0002/g, "</mark>");
+}
+
+const FIELD_ORDER = ["product", "qty", "customer", "due_date", "variant"];
+
+function itemReady(item, picks) {
+  return FIELD_ORDER.every(k => {
+    const f = item.fields[k];
+    const required = ["product", "qty", "customer"].includes(k);
+    if (f.status === "ok") return true;
+    if (f.status === "check") return picks && picks[k] !== undefined && picks[k] !== "";
+    return !required;  // empty optional field is fine
+  });
+}
+
+function renderProposal(p) {
+  const out = document.getElementById("intakeOut");
+  if (!out) return;
+  const quotes = p.items.flatMap(i => FIELD_ORDER.map(k => i.fields[k].quote));
+  const open = p.items.map((item, idx) => ({ item, idx })).filter(x => !x.item.order_id);
+  const count = open.filter(x => itemReady(x.item, state.picks[x.idx])).length;
+  const card = ({ item, idx }) => `<article class="card intake ${itemReady(item, state.picks[idx]) ? "" : "needs"}">
+    <div class="line2">${t("orderN")} ${idx + 1} · <i>${esc(item.line || "")}</i></div>
+    <dl>${FIELD_ORDER.map(k => {
+      const f = item.fields[k];
+      const pick = (state.picks[idx] || {})[k];
+      let val;
+      if (f.status === "check" && k === "due_date") {
+        val = `<input type="date" data-idx="${idx}" data-field="${k}" value="${esc(pick || "")}">`;
+      } else if (f.status === "check") {
+        val = `<span class="opts">${f.options.map(o => `<button type="button" class="chip ${String(pick) === String(o.id) ? "on" : ""}"
+          data-idx="${idx}" data-field="${k}" data-val="${esc(o.id)}">${esc(o.label)}</button>`).join("")}</span>`;
+      } else {
+        val = f.status === "ok" ? `<b>${esc(f.value)}</b>` : `<span class="muted">—</span>`;
+      }
+      return `<dt class="st-${f.status}">${t("f_" + k)}</dt><dd>${val}
+        ${f.quote ? `<small class="quote">“${esc(f.quote)}”</small>` : ""}
+        ${f.status === "check" && f.note ? `<small class="late">${esc(f.note)}</small>` : ""}</dd>`;
+    }).join("")}</dl></article>`;
+  out.innerHTML = `
+    <div class="split intake-split">
+      <aside><h3>${t("source")}</h3><pre class="source">${markQuotes(p.source, quotes)}</pre>
+        <p class="muted">${t("readBy")} ${esc(p.model)}</p></aside>
+      <div>${open.map(card).join("") || `<p class="empty">${t("nothingToCreate")}</p>`}
+        <button type="button" class="big" id="intakeApply" ${count ? "" : "disabled"}>${t("createN").replace("{n}", count)}</button>
+        <button type="button" class="link" id="intakeDrop">${t("dropProposal")}</button>
+      </div>
+    </div>`;
+  out.querySelectorAll("[data-val]").forEach(b => b.onclick = () => {
+    const idx = b.dataset.idx;
+    state.picks[idx] = { ...(state.picks[idx] || {}), [b.dataset.field]: b.dataset.val };
+    renderProposal(p);
+  });
+  out.querySelectorAll("input[data-field]").forEach(inp => inp.onchange = () => {
+    const idx = inp.dataset.idx;
+    state.picks[idx] = { ...(state.picks[idx] || {}), [inp.dataset.field]: inp.value };
+    renderProposal(p);
+  });
+  document.getElementById("intakeDrop").onclick = () => { state.proposal = null; out.innerHTML = ""; };
+  document.getElementById("intakeApply").onclick = async () => {
+    // Option ids are numbers for catalog items, strings for "new:..." / "stock".
+    const picks = {};
+    for (const [idx, fields] of Object.entries(state.picks)) {
+      picks[idx] = {};
+      for (const [k, v] of Object.entries(fields)) picks[idx][k] = /^\d+$/.test(v) ? Number(v) : v;
+    }
+    const r = await api(`/api/intake/${p.id}/apply`, { picks });
+    if (!r.silent) flash(r.ok, r.message);
+    if (!r.ok) return;
+    if (r.waiting) {
+      p.items.forEach((item, idx) => {  // mark what was created, keep the rest on screen
+        if (itemReady(item, state.picks[idx]) && !item.order_id) item.order_id = true;
+      });
+      renderOrders();
+    } else {
+      state.proposal = null; state.intakeText = ""; renderOrders();
+    }
   };
 }
 

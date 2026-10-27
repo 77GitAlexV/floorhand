@@ -3,6 +3,7 @@
 
 Every name and number here is made up. Run: python -m floorhand.seed
 """
+import json
 import random
 import sys
 from datetime import date, datetime, time, timedelta
@@ -73,7 +74,8 @@ def build(conn, rnd: random.Random | None = None, today: date | None = None) -> 
         raise SystemExit("Database already has data. Delete it first.")
 
     conn.executemany("INSERT INTO settings (key, value) VALUES (?, ?)",
-                     [("tz", TZ), ("currency", CURRENCY), ("shop_name", "Birch & Thread")])
+                     [("tz", TZ), ("currency", CURRENCY), ("shop_name", "Birch & Thread"),
+                      ("fabrics", json.dumps(FABRICS)), ("frames", json.dumps(FRAMES))])
     for seq, (code, en, ru, cap) in enumerate(STAGES, 1):
         conn.execute("INSERT INTO stages (code, name_en, name_ru, seq, capacity) "
                      "VALUES (?, ?, ?, ?, ?)", (code, en, ru, seq, cap))

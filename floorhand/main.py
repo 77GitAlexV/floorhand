@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, domain
+from . import db, domain, intake
 from .domain import DomainError
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -187,6 +187,25 @@ def orders(q: str = "", view: str = "open", s: Session = Depends(office),
 @app.get("/api/orders/{order_id}")
 def order(order_id: int, s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
     return domain.order_detail(conn, order_id)
+
+
+class IntakeIn(BaseModel):
+    text: str
+
+
+@app.post("/api/intake")
+def intake_propose(body: IntakeIn, s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
+    return intake.propose(conn, s.person_id, body.text)
+
+
+class ApplyIn(BaseModel):
+    picks: dict[str, dict[str, int | str]] = {}
+
+
+@app.post("/api/intake/{action_id}/apply")
+def intake_apply(action_id: int, body: ApplyIn, s: Session = Depends(office),
+                 conn=Depends(get_conn)) -> dict:
+    return intake.apply(conn, s.person_id, action_id, body.picks)
 
 
 @app.get("/api/shipping")

@@ -149,6 +149,15 @@ CREATE TABLE IF NOT EXISTS agent_actions (
     result      TEXT
 );
 
+-- What people call things -> what it is. Learned from corrections on intake.
+CREATE TABLE IF NOT EXISTS synonyms (
+    kind       TEXT NOT NULL CHECK (kind IN ('product', 'customer')),
+    alias      TEXT NOT NULL,           -- lower-case, as written in the source
+    target_id  INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (kind, alias)
+);
+
 -- Every paid model call, priced at call time. The budget guard sums this.
 CREATE TABLE IF NOT EXISTS model_calls (
     id             INTEGER PRIMARY KEY,
