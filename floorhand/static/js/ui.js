@@ -130,7 +130,7 @@ export function table({ cols, rows, emptyText, cls = "" }) {
 
 // --- sheet (modal) ----------------------------------------------------------------
 /**
- * Own dialog instead of confirm(): big Yes / No. Returns a promise of the pressed action id.
+ * Own dialog instead of the browser's: big Yes / No. Returns a promise of the pressed action id.
  * sheet({ title, body, actions: [{id:"yes", label, kind:"primary"}, {id:"no", label}] })
  */
 export function sheet({ title, body = "", actions = [], tone = "" }) {

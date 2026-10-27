@@ -18,7 +18,7 @@ addStrings({
     ordered: "Ordered", inProd: "In production", readyQ: "Ready", shippedQ: "Shipped", spec: "Specification",
     commercial: "Customer & price", unitPrice: "Price / pc", created: "Created", sourceWord: "Source", noHistory: "No work recorded yet.",
     recordedAt: "{who} · {stage}{pc} · {t}", src_manual: "typed in", src_sheet: "table", src_email: "e-mail", src_chat: "chat", src_intake: "intake",
-    draftSaved: "Text kept on this device.",
+    draftSaved: "Text kept on this device.", showMore: "Show {n} more", showLess: "Show fewer",
   },
   ru: {
     orders: "Заказы", newOrder: "Новый заказ", intakeHint: "Вставь письмо, сообщение из чата или таблицу — или перетащи сюда файл .csv.",
@@ -34,7 +34,7 @@ addStrings({
     ordered: "Заказано", inProd: "В работе", readyQ: "Готово", shippedQ: "Отгружено", spec: "Описание",
     commercial: "Клиент и цена", unitPrice: "Цена / шт", created: "Создан", sourceWord: "Откуда", noHistory: "Работа ещё не отмечалась.",
     recordedAt: "{who} · {stage}{pc} · {t}", src_manual: "вручную", src_sheet: "таблица", src_email: "письмо", src_chat: "чат", src_intake: "разбор",
-    draftSaved: "Текст сохранён на этом устройстве.",
+    draftSaved: "Текст сохранён на этом устройстве.", showMore: "Показать ещё {n}", showLess: "Свернуть",
   },
 });
 
@@ -82,10 +82,10 @@ registerScreen({
         <div id="intakeOut"></div>
       </section>
       ${r.attention.length ? `<h2 class="sec hot">${icon("alert")} ${t("attention")} <b>${r.attention.length}</b></h2>
-        <ul class="attention">${r.attention.slice(0, 6).map(o => `<li><button type="button" data-order="${o.id}">
+        <ul class="attention">${r.attention.slice(0, ui.allLate ? 999 : 4).map(o => `<li><button type="button" data-order="${o.id}">
           <span class="a-num">#${o.number}</span><span>${esc(o.product)} · ${esc(o.customer || t("toStock"))} · ${t("nowAt")} ${esc(nowAt(o.line))}</span>
           <span class="a-late">${t("lateBy", { n: o.late_days })}</span></button></li>`).join("")}
-        ${r.attention.length > 6 ? `<li class="muted">+ ${r.attention.length - 6}</li>` : ""}</ul>` : ""}
+        ${r.attention.length > 4 ? `<li class="more"><button type="button" id="moreLate">${ui.allLate ? t("showLess") : t("showMore", { n: r.attention.length - 4 })}</button></li>` : ""}</ul>` : ""}
       <div class="filters">
         <div class="search">${icon("search")}<input id="q" class="input" type="search" placeholder="${t("search")}" value="${esc(ui.q)}"></div>
         <div class="chips">${VIEWS.map(v => chip(t("v_" + v), { on: v === ui.view, attrs: `data-view="${v}"` })).join("")}</div>
@@ -109,6 +109,7 @@ registerScreen({
     if (ui.proposal) renderProposal(root, ctx, ui.proposal);
     root.querySelectorAll("[data-order]").forEach(el => el.onclick = () => go("orders", { id: el.dataset.order }));
     root.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { ui.view = b.dataset.view; ctx.refresh(); });
+    root.querySelector("#moreLate")?.addEventListener("click", () => { ui.allLate = !ui.allLate; ctx.refresh(); });
     const q = root.querySelector("#q");
     q.oninput = () => {
       clearTimeout(ui.timer);
@@ -244,7 +245,6 @@ function renderProposal(root, ctx, p) {
 async function renderOrder(root, ctx) {
   const o = await api(`/api/orders/${ctx.params.id}`);
   if (!o.ok) { if (!o.silent) root.innerHTML = empty(o.message, "alert"); return; }
-  const inProd = o.qty - o.finished - (o.status === "accepted" ? o.qty : 0);
   const main = o.status === "ready" && o.customer_id
     ? btn({ label: t("ship"), icon: "truck", kind: "primary", size: "lg", attrs: 'id="toShip"' })
     : (o.status === "accepted" || o.status === "in_work") ? comingSoon(t("printSheets"), "print") : "";

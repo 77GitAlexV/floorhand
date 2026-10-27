@@ -34,7 +34,8 @@ registerScreen({
         ${stat(t("doneToday"), totals.d, { sub: `${t("capacity")}: ${totals.c}` })}
         ${hot ? stat(t("bottleneck"), esc(name(hot)), { kind: "hot", sub: t("whyHot", { q: hot.queue, c: hot.capacity, d: Math.ceil(hot.queue / Math.max(hot.capacity, 1)) }) }) : ""}
       </div>
-      <div class="flow" aria-hidden="true">${st.map(s => `<div class="f ${s.bottleneck ? "hot" : ""}"><i style="height:${Math.max(3, Math.round(56 * s.queue / maxQ))}px"></i><span>${esc(name(s))}</span></div>`).join("")}</div>
+      <h2 class="sec">${t("flowTitle")}</h2>
+      <div class="flow" aria-hidden="true">${st.map(s => `<div class="f ${s.bottleneck ? "hot" : ""}"><i style="height:${Math.max(3, Math.round(40 * s.queue / maxQ))}px"></i><span><span>${esc(name(s))}</span><span>${s.queue}</span></span></div>`).join("")}</div>
       <div class="pipeline">${st.map(s => `<section class="stage-col ${s.bottleneck ? "hot" : ""}">
         ${icon("chevron", "arrow")}
         <h3>${esc(name(s))}${s.bottleneck ? `<span class="hot-tag">${icon("flame")}${t("bottleneck")}</span>` : ""}</h3>
