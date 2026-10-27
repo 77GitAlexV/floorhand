@@ -52,11 +52,11 @@ def test_table_columns_by_header_not_position(conn):
 
 
 def test_ambiguous_product_is_a_question(conn):
-    p = intake.propose(conn, manager(conn), "Urban Loft: 1 lord chair, emerald velvet, oak")
+    p = intake.propose(conn, manager(conn), "Urban Loft: 1 harbor chair, emerald velvet, oak")
     f = p["items"][0]["fields"]["product"]
     assert f["status"] == "check" and f["id"] is None
     labels = {o["label"] for o in f["options"]}
-    assert {"Lord armchair", "Lord rocking chair"} <= labels
+    assert {"Harbor armchair", "Harbor rocking chair"} <= labels
     assert not p["items"][0]["ready"]
 
 
@@ -68,7 +68,7 @@ def test_unknown_customer_offers_new_or_stock(conn):
 
 def test_quote_not_in_source_drops_the_field(conn):
     cat = intake._catalog(conn)
-    raw = {"product": {"value": "Lord armchair", "quote": "Lord armchair"},
+    raw = {"product": {"value": "Harbor armchair", "quote": "Harbor armchair"},
            "qty": {"value": "5", "quote": "five"}, "customer": {"value": None, "quote": None}}
     item = intake.ground(conn, "we want five chairs", raw, cat, TODAY)
     assert item["fields"]["product"]["status"] == "empty"
@@ -77,22 +77,22 @@ def test_quote_not_in_source_drops_the_field(conn):
 
 def test_propose_writes_no_orders_and_apply_learns(conn):
     before = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-    text = "Urban Loft: 1 lord chair, velvet emerald, oak"
+    text = "Urban Loft: 1 harbor chair, velvet emerald, oak"
     p = intake.propose(conn, manager(conn), text)
     assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == before
-    lord = conn.execute("SELECT id FROM products WHERE name = 'Lord armchair'").fetchone()[0]
+    harbor = conn.execute("SELECT id FROM products WHERE name = 'Harbor armchair'").fetchone()[0]
     with pytest.raises(DomainError, match="offered"):
         intake.apply(conn, manager(conn), p["id"], {"0": {"product": 99999}})
-    res = intake.apply(conn, manager(conn), p["id"], {"0": {"product": lord}})
+    res = intake.apply(conn, manager(conn), p["id"], {"0": {"product": harbor}})
     assert len(res["created"]) == 1 and res["waiting"] == 0
     order = conn.execute("SELECT * FROM orders WHERE number = ?", (res["created"][0],)).fetchone()
-    assert order["product_id"] == lord and order["source"] == "agent"
+    assert order["product_id"] == harbor and order["source"] == "agent"
     assert conn.execute("SELECT COUNT(*) FROM units WHERE order_id = ?",
                         (order["id"],)).fetchone()[0] == 1
     with pytest.raises(DomainError, match="closed"):
         intake.apply(conn, manager(conn), p["id"], {})
     again = intake.propose(conn, manager(conn), text)
-    assert again["items"][0]["fields"]["product"]["value"] == "Lord armchair"
+    assert again["items"][0]["fields"]["product"]["value"] == "Harbor armchair"
     assert again["items"][0]["ready"]
 
 

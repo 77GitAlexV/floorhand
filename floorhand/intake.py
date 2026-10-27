@@ -72,13 +72,13 @@ def _match(kind: str, text: str, cat: dict) -> tuple[int | None, list[dict]]:
     contained = [i for i, n in names.items() if set(norm(n).split()) <= tw]
     if len(contained) == 1:
         return contained[0], []
-    if len(contained) > 1:  # "lord rocking chair" contains "lord ... chair" too: longest wins
+    if len(contained) > 1:  # "harbor rocking chair" contains "harbor ... chair" too: longest wins
         best = max(contained, key=lambda i: len(norm(names[i]).split()))
         if sum(len(norm(names[i]).split()) == len(norm(names[best]).split())
                for i in contained) == 1:
             return best, []
     # Not certain: offer the closest names. Names sharing a real word with the
-    # text ("pouf", "lord") go first and push out mere look-alikes; digits do
+    # text ("pouf", "harbor") go first and push out mere look-alikes; digits do
     # not count as shared ("3 poufs" is not "3-seat").
     words = {w for w in tw if not w.isdigit()}
     scored = []

@@ -49,7 +49,7 @@ Also one Round pouf, same fabric, for the same delivery.
 Thanks,
 Dana`,
   table: `customer,product,qty,fabric,frame,due
-Nest Interiors,Lord rocking chair,1,velvet graphite,black,2026-11-10
+Nest Interiors,Harbor rocking chair,1,velvet graphite,black,2026-11-10
 Casa Verde,Sofa Oslo 2-seat,1,boucle milk,oak,2026-11-18
 Urban Loft,Bruno chair,4,linen sand,natural,2026-11-05`,
 };

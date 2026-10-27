@@ -173,9 +173,9 @@ def test_qty_cannot_drop_shipped_items(conn):
 
 def test_product_change_before_work_is_plain(conn):
     oid = new_order(conn)
-    res = O.edit(conn, office(conn), oid, "product", "Lord armchair", reason="Customer chose Lord")
+    res = O.edit(conn, office(conn), oid, "product", "Harbor armchair", reason="Customer chose Harbor")
     assert res["changed"]
-    assert domain._unit_order(conn, units(conn, oid)[0])["product_id"] == product(conn, "Lord armchair")
+    assert domain._unit_order(conn, units(conn, oid)[0])["product_id"] == product(conn, "Harbor armchair")
 
 
 def test_product_change_after_cutting_keeps_the_cut_parts_as_what_they_are(conn):
@@ -183,16 +183,16 @@ def test_product_change_after_cutting_keeps_the_cut_parts_as_what_they_are(conn)
     (u,) = units(conn, oid)
     advance(conn, u, "cut")
     m = office(conn)
-    res = O.edit(conn, m, oid, "product", "Lord armchair", reason="Customer chose Lord")
+    res = O.edit(conn, m, oid, "product", "Harbor armchair", reason="Customer chose Harbor")
     assert res["needs"] == "started" and "Cozy armchair" in res["message"]
-    res = O.edit(conn, m, oid, "product", "Lord armchair", reason="Customer chose Lord",
+    res = O.edit(conn, m, oid, "product", "Harbor armchair", reason="Customer chose Harbor",
                  started="to_stock")
     assert res["ok"]
     old = domain._unit_order(conn, u)
     assert old["product_id"] == product(conn) and old["customer_id"] is None  # cut Cozy in stock
     (fresh,) = units(conn, oid)
-    assert fresh != u and not domain.done_stage_ids(conn, fresh)  # Lord starts at Cutting
-    assert domain._unit_order(conn, fresh)["product_id"] == product(conn, "Lord armchair")
+    assert fresh != u and not domain.done_stage_ids(conn, fresh)  # Harbor starts at Cutting
+    assert domain._unit_order(conn, fresh)["product_id"] == product(conn, "Harbor armchair")
     assert qty_matches_units(conn) == []
 
 
@@ -202,7 +202,7 @@ def test_product_of_shipped_items_cannot_change(conn):
     advance(conn, u, "pack")
     domain.ship(conn, office(conn), 1, [u], "paid")
     with pytest.raises(DomainError, match="already shipped"):
-        O.edit(conn, office(conn), oid, "product", "Lord armchair", reason="x")
+        O.edit(conn, office(conn), oid, "product", "Harbor armchair", reason="x")
 
 
 def test_variant_change_after_work_asks_keep_or_send_back(conn):

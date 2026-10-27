@@ -32,7 +32,7 @@ def sheet(*rows, head=HEAD):
 
 ROWS = ["901;Urban Loft;Cozy armchair;velvet beige;walnut;2;380;2026-11-20;*",
         "902;Casa Verde;Round pouf;boucle milk;;3;120;25.11;*",
-        "903;Studio Blanc;Lord armchair;linen sand;oak;1;520;2026-12-01;*"]
+        "903;Studio Blanc;Harbor armchair;linen sand;oak;1;520;2026-12-01;*"]
 
 
 def upload(conn, text, book="Book A", decisions=None, apply=True):
@@ -118,7 +118,7 @@ def test_renumbered_row_is_asked_never_applied_silently(conn):
     (s,) = by(p, "suspect")
     assert s["default"] is None and "renumbered" in s["words"]
     assert order_of(conn, "Book A", "903")["product_id"] == \
-        conn.execute("SELECT id FROM products WHERE name = 'Lord armchair'").fetchone()[0]
+        conn.execute("SELECT id FROM products WHERE name = 'Harbor armchair'").fetchone()[0]
     p, res = upload(conn, sheet(*ROWS[:2], shifted), decisions=None, apply=False)
     res = reconcile.apply(conn, m(conn), p["id"], {by(p, "suspect")[0]["key"]: "new"})
     new = order_of(conn, "Book A", "903")
@@ -258,7 +258,7 @@ def test_xlsx_months_with_shifted_columns_template_totals_and_tails(conn):
     b = wb.create_sheet("Ноябрь")
     b.append(["Дата", "№ заказа", "Покупатель", "Изделие", "Ткань", "Магазин", "Каркас",
               "Кол-во", "Цена", "Срок изготовления", "Готовность", "Дата отправки"])
-    b.append([date(2026, 11, 2), 1202, "Studio Blanc", "Lord armchair", "linen sand", "", "oak",
+    b.append([date(2026, 11, 2), 1202, "Studio Blanc", "Harbor armchair", "linen sand", "", "oak",
               1, 520, date(2026, 12, 1), "готов", "*"])
     b.append(["Дата", "№ заказа", "Покупатель", "Изделие", "Ткань"])
     b.append([None, 1203, None, None, None])

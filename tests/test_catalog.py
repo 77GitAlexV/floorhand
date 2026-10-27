@@ -57,10 +57,10 @@ def test_missing_price_is_asked_not_guessed(conn):
 
 
 def test_existing_product_means_changing_its_rates(conn):
-    p = catalog.propose(conn, m(conn), "rate 7 for Lord armchair at upholstery")
+    p = catalog.propose(conn, m(conn), "rate 7 for Harbor armchair at upholstery")
     assert p["action"] == "set_rates" and p["rates"][0]["old"] == 15
     catalog.apply(conn, m(conn), p["id"])
-    pid = conn.execute("SELECT id FROM products WHERE name = 'Lord armchair'").fetchone()[0]
+    pid = conn.execute("SELECT id FROM products WHERE name = 'Harbor armchair'").fetchone()[0]
     assert conn.execute("SELECT amount FROM rates WHERE product_id = ? AND stage_id = ?",
                         (pid, stage(conn, "uph"))).fetchone()[0] == 7
 

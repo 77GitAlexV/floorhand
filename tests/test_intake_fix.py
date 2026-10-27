@@ -32,24 +32,24 @@ def pid(conn, name):
 
 def test_an_ok_field_can_be_corrected_and_the_correction_is_learned(conn):
     m = manager(conn)
-    text = "Home & Co: 2 lord chairs in velvet beige, walnut"
+    text = "Home & Co: 2 harbor chairs in velvet beige, walnut"
     p = intake.propose(conn, m, text)
     f = p["items"][0]["fields"]["product"]
     assert f["status"] == "check"
     # the person types the name instead of picking an option
-    res = intake.fix(conn, m, p["id"], 0, "product", "Lord rocking chair")
-    assert res["ok"] and res["item"]["fields"]["product"]["value"] == "Lord rocking chair"
+    res = intake.fix(conn, m, p["id"], 0, "product", "Harbor rocking chair")
+    assert res["ok"] and res["item"]["fields"]["product"]["value"] == "Harbor rocking chair"
     # and changes an "ok" field the reader got right but the customer meant otherwise
     res = intake.fix(conn, m, p["id"], 0, "qty", "3")
     assert res["item"]["fields"]["qty"]["value"] == 3
     out = intake.apply(conn, m, p["id"], {})
     order = conn.execute("SELECT * FROM orders WHERE number = ?", (out["created"][0],)).fetchone()
-    assert order["product_id"] == pid(conn, "Lord rocking chair") and order["qty"] == 3
+    assert order["product_id"] == pid(conn, "Harbor rocking chair") and order["qty"] == 3
     payload = json.loads(conn.execute("SELECT payload FROM agent_actions WHERE id = ?",
                                       (p["id"],)).fetchone()[0])
     assert {c["field"] for c in payload["corrections"]} == {"product", "qty"}
     again = intake.propose(conn, m, text)
-    assert again["items"][0]["fields"]["product"]["value"] == "Lord rocking chair"
+    assert again["items"][0]["fields"]["product"]["value"] == "Harbor rocking chair"
 
 
 def test_typed_value_not_in_catalog_comes_back_with_suggestions(conn):

@@ -33,8 +33,8 @@ OFFICE = [("Kate", "manager"), ("Alex", "owner")]
 
 PRODUCTS = [  # name, kind, price, rates per stage (None = rate not set yet)
     ("Cozy armchair", "armchair", 380, [4, 9, 12, 6, 2]),
-    ("Lord armchair", "armchair", 520, [5, 11, 15, 8, 2]),
-    ("Lord rocking chair", "rocking chair", 610, [5, 11, 15, 10, 3]),
+    ("Harbor armchair", "armchair", 520, [5, 11, 15, 8, 2]),
+    ("Harbor rocking chair", "rocking chair", 610, [5, 11, 15, 10, 3]),
     ("Nordic lounge chair", "armchair", 450, [4, 10, 13, 7, 2]),
     ("Bruno chair", "chair", 160, [2, 4, 6, 3, 1]),
     ("Round pouf", "pouf", 120, [2, 3, 5, 2, 1]),

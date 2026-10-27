@@ -6,7 +6,7 @@ In the workshop ERP the reference/settings screens were opened 3-11 times in
     "add chair Bruno, stages sewing and assembly, rate 3, price 160"
     "добавь стул Бруно, этапы шитьё и сборка, ставка 3"
     "add fabric velvet blue" · "add customer Blue Door Cafe, city Austin"
-    "rate 5 for Lord armchair at upholstery"
+    "rate 5 for Harbor armchair at upholstery"
 
 The sentence becomes a proposal card ("this is what will be created"), every
 value with the words it came from; nothing is written until Yes. Muse Spark
