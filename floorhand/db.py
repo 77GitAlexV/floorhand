@@ -196,6 +196,14 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
+# Feature modules add their own tables here (see floorhand/features/__init__.py).
+EXTRA_SCHEMA: list[str] = []
+
+
 def init(conn: sqlite3.Connection) -> None:
+    from . import features  # registers feature tables in EXTRA_SCHEMA
+    features.load()
     conn.executescript(SCHEMA)
+    for sql in EXTRA_SCHEMA:
+        conn.executescript(sql)
     conn.commit()
