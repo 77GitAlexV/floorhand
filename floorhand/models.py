@@ -91,11 +91,13 @@ def _post(path: str, body: dict, timeout: int = 120) -> dict:
 
 
 def respond(conn: sqlite3.Connection, purpose: str, input_: list | str, *,
-            model: str = SPARK, max_output_tokens: int = 2000, **extra) -> dict:
+            model: str = SPARK, max_output_tokens: int = 2000,
+            est_input_tokens: int | None = None, **extra) -> dict:
     """POST /v1/responses under the budget. Returns the raw response JSON."""
     # Worst case: 1 token per 2 chars plus 1,000 for framing, and all of
     # max_output_tokens used. Real usage is usually far below this.
-    est_in = len(json.dumps(input_, ensure_ascii=False)) // 2 + 1000
+    est_in = est_input_tokens if est_input_tokens is not None else \
+        len(json.dumps(input_, ensure_ascii=False)) // 2 + 1000
     worst = token_cost_micro(model, est_in, max_output_tokens)
     check(conn, worst)
     body = {"model": model, "input": input_, "max_output_tokens": max_output_tokens, **extra}
@@ -115,6 +117,22 @@ def respond(conn: sqlite3.Connection, purpose: str, input_: list | str, *,
         _log(conn, model, purpose, input_tokens=inp, cached_tokens=cached, output_tokens=out,
              cost_micro=token_cost_micro(model, inp, out, cached), estimated=False, ok=True)
     return data
+
+
+IMAGE_TOKENS_WORST = 6000  # a large photo, tiled; priced as input tokens
+
+
+def vision(conn: sqlite3.Connection, purpose: str, prompt: str, image_b64: str, mime: str, *,
+           max_output_tokens: int = 3000) -> dict:
+    """Spark reading one image (an order form, a chat screenshot) plus a text
+    prompt. The worst case counts the image as IMAGE_TOKENS_WORST tokens, not
+    as the length of its base64 text."""
+    input_ = [{"role": "user", "content": [
+        {"type": "input_text", "text": prompt},
+        {"type": "input_image", "image_url": f"data:{mime};base64,{image_b64}"}]}]
+    est = len(prompt) // 2 + IMAGE_TOKENS_WORST + 1000
+    return respond(conn, purpose, input_, max_output_tokens=max_output_tokens,
+                   est_input_tokens=est)
 
 
 def budget_status(conn: sqlite3.Connection) -> dict:

@@ -17,7 +17,11 @@ Lessons carried over from running a real workshop ERP:
 """
 import sqlite3
 
+import base64
+import binascii
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .. import domain, intake
@@ -70,6 +74,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_order_ext ON order_extra(ext_book, ext_ref)
 
 -- One row per item sent back. The undo records it wrote carry
 -- idem_key 'rework:<id>:<event id>' and method 'rework:<payer>'.
+-- Photos sent to intake (order forms, chat screenshots), kept next to the
+-- proposal so the person can type from them when the model is off.
+CREATE TABLE IF NOT EXISTS intake_photos (
+    id          INTEGER PRIMARY KEY,
+    mime        TEXT NOT NULL,
+    data        BLOB NOT NULL,
+    created_at  TEXT NOT NULL,
+    person_id   INTEGER REFERENCES people(id)
+);
+
 CREATE TABLE IF NOT EXISTS reworks (
     id          INTEGER PRIMARY KEY,
     unit_id     INTEGER NOT NULL REFERENCES units(id),
@@ -974,3 +988,52 @@ def catalog_lists(s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
                        for s_ in domain.stages(conn)],
             "causes": list(CAUSES), "payers": list(PAYERS)}
 
+
+
+# --- intake: the person fixes anything, photos -----------------------------
+
+class FixIn(BaseModel):
+    idx: int
+    field: str
+    value: int | str | None = None
+
+
+@router.post("/api/orders/intake/{action_id}/fix")
+def intake_fix(action_id: int, body: FixIn, s: Session = Depends(office),
+               conn=Depends(get_conn)) -> dict:
+    return intake.fix(conn, s.person_id, action_id, body.idx, body.field, body.value)
+
+
+@router.post("/api/orders/intake/{action_id}/line")
+def intake_add_line(action_id: int, s: Session = Depends(office),
+                    conn=Depends(get_conn)) -> dict:
+    return intake.add_line(conn, s.person_id, action_id)
+
+
+@router.post("/api/orders/intake/{action_id}/line/{idx}/remove")
+def intake_remove_line(action_id: int, idx: int, s: Session = Depends(office),
+                       conn=Depends(get_conn)) -> dict:
+    return intake.remove_line(conn, s.person_id, action_id, idx)
+
+
+class PhotoIn(BaseModel):
+    data_b64: str
+    mime: str
+
+
+@router.post("/api/orders/intake/photo")
+def intake_photo(body: PhotoIn, s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
+    try:
+        data = base64.b64decode(body.data_b64.split(",")[-1], validate=True)
+    except (binascii.Error, ValueError):
+        raise DomainError("The photo did not arrive whole. Send it again.")
+    return intake.propose_photo(conn, s.person_id, data, body.mime)
+
+
+@router.get("/api/orders/intake/photo/{photo_id}")
+def intake_photo_get(photo_id: int, s: Session = Depends(office),
+                     conn=Depends(get_conn)) -> Response:
+    row = conn.execute("SELECT mime, data FROM intake_photos WHERE id = ?", (photo_id,)).fetchone()
+    if row is None:
+        raise DomainError("No such photo.")
+    return Response(row["data"], media_type=row["mime"])

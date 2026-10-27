@@ -442,7 +442,7 @@ def apply(conn: sqlite3.Connection, person_id: int, action_id: int,
     payload = json.loads(row["payload"])
     created, waiting = [], 0
     for idx, item in enumerate(payload["items"]):
-        if item.get("order_id"):
+        if item.get("order_id") or item.get("removed"):
             continue
         f = item["fields"]
         for field, choice in (picks.get(str(idx)) or {}).items():
@@ -470,6 +470,7 @@ def apply(conn: sqlite3.Connection, person_id: int, action_id: int,
         elif isinstance(customer_id, str) and customer_id.startswith("new:"):
             customer_id = conn.execute("INSERT INTO customers (name) VALUES (?)",
                                        (customer_id[4:].strip(),)).lastrowid
+            f["customer"]["id"] = customer_id  # so the quote is learned for the new name
         oid = domain.create_order(conn, product_id=int(f["product"]["id"]),
                                   qty=int(f["qty"]["id"]), customer_id=customer_id,
                                   due_date=f["due_date"]["id"], variant=f["variant"]["id"] or "",
@@ -495,3 +496,243 @@ def apply(conn: sqlite3.Connection, person_id: int, action_id: int,
             "message": (f"Created {len(numbers)} order(s): " + ", ".join(f"#{n}" for n in numbers)
                         if numbers else "Nothing created yet.")
             + (f" {waiting} still to check." if waiting else "")}
+
+
+
+# --- the person fixes anything ----------------------------------------------
+# The model (or the offline rules) proposes; the person has the last word on
+# every field, not only on the ones marked "check". A typed value is checked
+# against the catalog and comes back with the closest names when it is not
+# there. A fix of a quoted product or customer becomes a synonym on "Create",
+# so the same wording is understood next time.
+
+FIELDS = ("product", "qty", "customer", "due_date", "variant")
+
+
+def _load(conn: sqlite3.Connection, action_id: int) -> dict:
+    row = conn.execute("SELECT * FROM agent_actions WHERE id = ? AND kind = 'intake'",
+                       (action_id,)).fetchone()
+    if row is None:
+        raise DomainError("No such proposal.")
+    if row["status"] != "proposed":
+        raise DomainError("This proposal is already closed.")
+    return json.loads(row["payload"])
+
+
+def _save(conn: sqlite3.Connection, action_id: int, payload: dict) -> None:
+    conn.execute("UPDATE agent_actions SET payload = ? WHERE id = ?",
+                 (json.dumps(payload), action_id))
+    conn.commit()
+
+
+def _ready(fields: dict) -> bool:
+    return all(fields[k]["status"] == "ok" for k in REQUIRED) and \
+        all(fields[k]["status"] != "check" for k in ("due_date", "variant"))
+
+
+def _empty_field() -> dict:
+    return {"id": None, "value": "", "quote": None, "status": "empty", "options": [], "note": ""}
+
+
+def _suggest(message: str, options: list[dict]) -> dict:
+    return {"ok": False, "message": message, "options": options}
+
+
+def _fixed_value(conn: sqlite3.Connection, field: str, value, cat: dict,
+                 today: date) -> dict:
+    """{'id', 'value'} for a typed value, or a dict with ok False and options."""
+    text = str(value if value is not None else "").strip()
+    if field == "product":
+        if isinstance(value, int) or text.isdigit():
+            name = cat["product"].get(int(text))
+            if name is None:
+                return _suggest("Unknown product.", [])
+            return {"id": int(text), "value": name}
+        pid, options = _match("product", text, cat)
+        if pid is None:
+            return _suggest(f"No product “{text}” in the catalog. Pick one, or add it to the "
+                            "catalog first (“add …”).", options)
+        return {"id": pid, "value": cat["product"][pid]}
+    if field == "customer":
+        if text.lower() in (STOCK, "to stock", "на склад"):
+            return {"id": STOCK, "value": "to stock"}
+        if text.startswith("new:"):
+            name = text[4:].strip()
+            if not name:
+                return _suggest("Type the new customer's name.", [])
+            return {"id": "new:" + name, "value": f"New customer: {name}"}
+        if isinstance(value, int) or text.isdigit():
+            name = cat["customer"].get(int(text))
+            if name is None:
+                return _suggest("Unknown customer.", [])
+            return {"id": int(text), "value": name}
+        cid, options = _match("customer", text, cat)
+        if cid is None:
+            if not text:
+                return _suggest("Type who it is for, or pick “To stock”.",
+                                [{"id": STOCK, "label": "To stock"}])
+            return _suggest(f"No customer “{text}” yet.",
+                            options[:2] + [{"id": "new:" + text, "label": f"New customer: {text}"},
+                                           {"id": STOCK, "label": "To stock"}])
+        return {"id": cid, "value": cat["customer"][cid]}
+    if field == "qty":
+        try:
+            n = int(text)
+        except ValueError:
+            return _suggest("Quantity must be a whole number.", [])
+        if not 0 < n <= 500:
+            return _suggest("Quantity must be between 1 and 500.", [])
+        return {"id": n, "value": n}
+    if field == "due_date":
+        if not text:
+            return {"id": None, "value": "", "empty": True}
+        try:
+            d = date.fromisoformat(text)
+        except ValueError:
+            d = _parse_date(text, today)
+        if d is None:
+            return _suggest("Date must look like 2026-11-05 or “Nov 5”.", [])
+        return {"id": d.isoformat(), "value": d.isoformat()}
+    # variant: fabric and frame from the catalog lists
+    if not text:
+        return {"id": "", "value": "", "empty": True}
+    v = _variant(text.replace("·", " "), cat)
+    if v["fabric"] is None and (v["fabric_options"] or not v["frame"]):
+        close = v["fabric_options"] or difflib.get_close_matches(
+            text.split("·")[0].strip().lower(), cat["fabrics"], n=3, cutoff=0.4)
+        frame = f" · {v['frame']}" if v["frame"] else ""
+        return _suggest(f"No fabric “{text}” in the catalog.",
+                        [{"id": f + frame, "label": f + frame} for f in close])
+    joined = " · ".join(x for x in (v["fabric"], v["frame"]) if x)
+    return {"id": joined, "value": joined}
+
+
+def fix(conn: sqlite3.Connection, person_id: int, action_id: int, idx: int, field: str,
+        value) -> dict:
+    """Set one field of one proposed order by hand."""
+    if field not in FIELDS:
+        raise DomainError("Unknown field.")
+    payload = _load(conn, action_id)
+    items = payload["items"]
+    if not 0 <= idx < len(items) or items[idx].get("removed"):
+        raise DomainError("No such line in this proposal.")
+    item = items[idx]
+    if item.get("order_id"):
+        raise DomainError("This line is already created. Edit the order itself.")
+    cat = _catalog(conn)
+    res = _fixed_value(conn, field, value, cat, date.fromisoformat(domain.today(conn)))
+    if res.get("ok") is False:
+        return res
+    f = item["fields"][field]
+    was = f.get("value")
+    if res.get("empty"):
+        if field in REQUIRED:
+            return _suggest("This field is needed.", [])
+        f.update(id=res["id"], value="", status="empty", options=[], note="", learned=False)
+    else:
+        f.update(id=res["id"], value=res["value"], status="ok", options=[], note="",
+                 learned=field in ("product", "customer") and bool(f.get("quote")), by_hand=True)
+    item["ready"] = _ready(item["fields"])
+    if str(was) != str(f["value"]):
+        payload.setdefault("corrections", []).append(
+            {"item": idx, "field": field, "was": was, "now": f["value"], "by": person_id})
+    _save(conn, action_id, payload)
+    label = field.replace("_", " ").capitalize()
+    return {"ok": True, "item": item, "message": f"{label}: {f['value'] or 'empty'}."}
+
+
+def add_line(conn: sqlite3.Connection, person_id: int, action_id: int) -> dict:
+    """A line the reader missed (or a photo read by hand): all fields empty."""
+    payload = _load(conn, action_id)
+    if len(payload["items"]) >= 200:
+        raise DomainError("Too many lines in one proposal. Split it.")
+    payload["items"].append({"fields": {k: _empty_field() for k in FIELDS},
+                             "line": "added by hand", "ready": False, "order_id": None,
+                             "by_hand": True})
+    _save(conn, action_id, payload)
+    return {"ok": True, "idx": len(payload["items"]) - 1, "item": payload["items"][-1],
+            "message": "Line added. Fill product, quantity and customer."}
+
+
+def remove_line(conn: sqlite3.Connection, person_id: int, action_id: int, idx: int) -> dict:
+    """Not an order after all (a greeting, a duplicate). Kept in the proposal,
+    marked removed, so the record shows what was dropped."""
+    payload = _load(conn, action_id)
+    items = payload["items"]
+    if not 0 <= idx < len(items):
+        raise DomainError("No such line in this proposal.")
+    if items[idx].get("order_id"):
+        raise DomainError("This line is already created. Cancel the order instead.")
+    items[idx]["removed"] = True
+    _save(conn, action_id, payload)
+    return {"ok": True, "message": f"Line {idx + 1} removed from this proposal."}
+
+
+# --- a photo of an order form or a chat screenshot --------------------------
+
+PHOTO_PROMPT = """This is a photo of a furniture order: a paper order form or a chat screenshot.
+1. Copy every line of text you can read into "transcript", exactly as written, line by line.
+   Do not fix spelling. Skip what you cannot read; never invent text.
+2. Then turn it into orders. Return only JSON:
+{"transcript": "...", "orders": [{"product": {"value": "", "quote": ""}, "qty": {...},
+"customer": {...}, "due_date": {...}, "variant": {...}}]}
+Every "quote" is copied character for character from your transcript. If the photo does not
+say it, leave value and quote empty. Never guess.
+product: the closest catalog product name. qty: a whole number. customer: catalog name if it is
+one of them, otherwise as written, "stock" if it says for stock. due_date: YYYY-MM-DD, today is
+{today}. variant: fabric and frame as written in the catalog lists.
+Catalog products: {products}
+Known customers: {customers}
+Fabrics: {fabrics}
+Frames: {frames}"""
+
+PHOTO_TYPES = {"image/jpeg": b"\xff\xd8", "image/png": b"\x89PNG", "image/webp": b"RIFF"}
+PHOTO_MAX = 6 * 1024 * 1024
+
+
+def propose_photo(conn: sqlite3.Connection, person_id: int, data: bytes, mime: str) -> dict:
+    """Spark reads the photo into a transcript plus orders; the quote rule is
+    the same as for text, checked against the transcript, which is shown next
+    to the photo. With the model off, the photo is kept and the person types
+    the order next to it."""
+    import base64
+    if mime not in PHOTO_TYPES or not data.startswith(PHOTO_TYPES[mime]):
+        raise DomainError("Send a photo as JPEG, PNG or WEBP.")
+    if len(data) > PHOTO_MAX:
+        raise DomainError("The photo is larger than 6 MB. Take it again a bit smaller.")
+    when = domain.now(conn).isoformat(timespec="seconds")
+    photo_id = conn.execute("INSERT INTO intake_photos (mime, data, created_at, person_id) "
+                            "VALUES (?, ?, ?, ?)", (mime, data, when, person_id)).lastrowid
+    cat = _catalog(conn)
+    today = date.fromisoformat(domain.today(conn))
+    note = ""
+    try:
+        prompt = (PHOTO_PROMPT.replace("{today}", today.isoformat())
+                  .replace("{products}", "; ".join(cat["product"].values()))
+                  .replace("{customers}", "; ".join(cat["customer"].values()))
+                  .replace("{fabrics}", "; ".join(cat["fabrics"]))
+                  .replace("{frames}", "; ".join(cat["frames"])))
+        out = models.vision(conn, "intake-photo", prompt, base64.b64encode(data).decode(), mime)
+        m = re.search(r"\{.*\}", _output_text(out), re.S)
+        if not m:
+            raise BudgetStop("Model answer had no JSON.")
+        parsed = json.loads(m[0])
+        source = str(parsed.get("transcript") or "").strip()
+        raw = [{k: _field((o.get(k) or {}).get("value") or None,
+                          (o.get(k) or {}).get("quote") or None)
+                for k in FIELDS} for o in parsed.get("orders", [])]
+        model = models.SPARK
+        items = [ground(conn, source, r, cat, today) for r in raw]
+    except (BudgetStop, ValueError) as exc:
+        source, items, model = "", [], "offline"
+        why = ("Reading photos needs the Meta model, and it is off now"
+               if isinstance(exc, BudgetStop) and not models.live()
+               else f"The photo could not be read ({exc})")
+        note = why + ". The photo is kept: add a line and type the order from it."
+    payload = {"source": source, "items": items, "photo_id": photo_id, "note": note}
+    cur = conn.execute(
+        "INSERT INTO agent_actions (kind, payload, model, created_at, for_person) "
+        "VALUES ('intake', ?, ?, ?, ?)", (json.dumps(payload), model, when, person_id))
+    conn.commit()
+    return {"id": cur.lastrowid, "model": model, **payload,
+            "message": note or f"Read {len(items)} order(s) from the photo. Check them."}
