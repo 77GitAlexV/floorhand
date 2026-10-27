@@ -27,7 +27,7 @@ class Element {
       if (m[0].startsWith("</")) { if (stack.length > 1) stack.pop(); continue; }
       const attrs = Object.fromEntries([...m[2].matchAll(/([\w:-]+)(?:="([^"]*)")?/g)].map(a => [a[1], decode(a[2] || "")]));
       const el = new Element(m[1], attrs); stack.at(-1).children.push(el);
-      if (!/^(input|img|br|hr|meta|link|option)$/.test(m[1]) && !m[0].endsWith("/>")) stack.push(el);
+      if (!/^(input|img|br|hr|meta|link)$/.test(m[1]) && !m[0].endsWith("/>")) stack.push(el);
     }
   }
   get innerHTML() { return this.html || ""; }
@@ -46,6 +46,7 @@ class Element {
   addEventListener(type, callback) { this["on" + type] = callback; if (!this.listeners.has(type)) this.listeners.set(type, new Set()); this.listeners.get(type).add(callback); }
   removeEventListener(type, callback) { this.listeners.get(type)?.delete(callback); }
   appendChild(c) { this.children.push(c); }
+  get elements() { return Object.fromEntries(this.querySelectorAll("[name]").map(el => [el.attrs.name, el])); }
   reportValidity() { return this.value !== "" && Number(this.value) >= 1 && Number(this.value) <= 90; }
   focus() {}
   remove() {}
@@ -75,7 +76,13 @@ class Events {
   close() { this.closed = true; }
 }
 const sandbox = vm.createContext({
-  document, console, Blob, FormData, URLSearchParams,
+  document, console, Blob, URLSearchParams,
+  FormData: class extends FormData {
+    constructor(form) {
+      super();
+      if (form) for (const [name, el] of Object.entries(form.elements)) this.set(name, el.value);
+    }
+  },
   URL: { createObjectURL: () => "blob:test", revokeObjectURL: url => revocations.push(url) },
   crypto: { randomUUID: () => `retry-${++timerId}` },
   localStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v) },
@@ -133,7 +140,15 @@ modules.set(path.join(rootPath, "core.js"), quiet);
 for (const screen of ["channels", "shelf", "live", "outbox", "tablet", "login", "me", "work"]) {
   const mod = await moduleAt(path.join(rootPath, "screens", screen + ".js")); await mod.evaluate();
 }
+// Evaluate the complete entry point so merged screens resolve their real exports.
+const registry = await moduleAt(path.join(rootPath, "screens", "index.js"));
+await registry.evaluate();
 const screens = new Map(core.screenList().map(s => [s.id, s]));
+for (const file of (await readFile(path.join(rootPath, "screens", "index.js"), "utf8")).matchAll(/import "\.\/([^\"]+)\.js"/g)) {
+  const source = await readFile(path.join(rootPath, "screens", file[1] + ".js"), "utf8");
+  const id = source.match(/registerScreen\(\{\s*id:\s*["']([^"']+)["']/)?.[1];
+  assert(id && screens.has(id), `${file[1]} must register when the entry point loads`);
+}
 for (const role of ["owner", "manager"]) {
   const nav = core.navFor({ role, stage_id: null }).map(s => s.id);
   for (const id of ["channels", "shelf", "outbox", "tablet"]) assert(nav.includes(id));
@@ -148,6 +163,92 @@ function context() {
   return { query: new URLSearchParams(), params: {}, me: {}, isActive: () => active, refresh() {},
     onDispose: fn => disposers.push(fn), dispose() { active = false; disposers.forEach(fn => fn()); } };
 }
+// Both integrations survive the complete screen graph in EN/RU and a gate outage.
+const scenario = { id: 301, kind: "ripple", currency: "$", headline: { en: "Demo ripple", ru: "Демо-сбой" },
+  movements: [], starvation: [], options: [{ id: "wait", label: { en: "Wait", ru: "Подождать" } }], why: [] };
+const quote = {fits:true, capacity_fits:true, material_shortages:[], material_spec_unknown:false,
+  queue_eta:"2026-11-02", priority_eta:"2026-10-30", eta:"2026-10-29", stage_rates:[], overtime:[],
+  margin_before:.6, margin_after:.5, margin_quoted:.6, target_margin:.35, base_cost:80, extra_cost:20,
+  surcharge:40, required_revenue:240, wip_cash:{value:12, known_subtotal:12, basis:{en:"Recorded", ru:"Учтено"}}};
+const rushScenario = {...scenario, id:302, kind:"rush", quote,
+  options:[{id:"draft_quote", label:{en:"Save draft", ru:"Сохранить черновик"}}]};
+for (const lang of ["en", "ru"]) for (const gateOk of [true, false]) for (const id of ["floor", "today"]) {
+  core.state.lang = lang; core.state.me = { role: "owner", stage_id: null };
+  const root = new Element(), ctx = context(); ctx.me = core.state.me; calls = [];
+  transport = url => {
+    if (url === "/api/gate/summary") return reply({ message: "FACT: gate <demo>", message_ru: "ФАКТ: вход <демо>" }, gateOk ? 200 : 503);
+    if (url === "/api/floor") return reply([]);
+    if (url === "/api/owner/today") return reply({ date: "2026-10-27", summary: { open_orders: 0, ready: 0, late: 0, shortages: 0, done_today: 0, capacity: 0 }, cards: [scenario, rushScenario], decided: [] });
+    if (url.startsWith("/api/owner/morning")) return reply({ head: "Demo", lines: [] });
+    if (url === "/api/rush/catalog") return reply({ products: [{id:1, name:"Demo product"}], customers: [] });
+    if (url === "/api/ripple/cards") return reply({ cards: [scenario] });
+    throw new Error(`Unexpected integration request: ${url}`);
+  };
+  await screens.get(id).render(root, ctx);
+  assert(calls.some(c => c.url === "/api/gate/summary"));
+  assert.equal(root.innerHTML.includes('href="#/gate"'), gateOk);
+  assert(root.querySelector("[data-report]"), `${id} retains the disruption form`);
+  assert(root.querySelector("[data-whatif-pick]"), `${id} retains stored ripple decisions`);
+  assert(root.querySelector('a[href="#/rush"]').textContent.includes(lang === "ru" ? "Срочный заказ" : "Urgent order"));
+  if (id === "today") {
+    assert.equal(root.querySelectorAll(".scenario-card").length, 2, "Today uses the shared decision components for both kinds");
+    assert(root.querySelector(".rush-verdict"));
+  }
+  if (gateOk) assert(root.innerHTML.includes(lang === "ru" ? "ФАКТ: вход &lt;демо&gt;" : "FACT: gate &lt;demo&gt;"));
+  ctx.dispose();
+}
+
+// The standalone rush screen renders and submits structured fields in both languages.
+for (const lang of ["en", "ru"]) {
+  core.state.lang = lang; const root = new Element(), ctx = context(); calls = [];
+  let accepted = false;
+  transport = url => url === "/api/rush/catalog" ? reply({products:[{id:1, name:"Demo <product>"}], customers:[]})
+    : accepted ? reply({card:rushScenario, message:"Calculated", message_ru:"Рассчитано"})
+    : reply({message:"Queue changed; retry", message_ru:"Очередь изменилась; повторите"}, 409);
+  await screens.get("rush").render(root, ctx);
+  assert(root.innerHTML.includes("Demo &lt;product&gt;"));
+  const form = root.querySelector("[data-rush-form]");
+  for (const [name, value] of Object.entries({product:"1", qty:"2", due:"2026-10-30", margin:"35", variant:"Demo fabric"})) form.elements[name].value = value;
+  await form.onsubmit({preventDefault() {}});
+  assert(root.querySelector("[data-rush-result]").textContent.includes(lang === "en" ? "retry" : "повторите"));
+  assert.equal(form.querySelector("button").disabled, false);
+  const first = JSON.parse(calls.at(-1).body);
+  assert.deepEqual({product:first.product_id, qty:first.qty, due:first.due_date, margin:first.target_margin},
+    {product:1, qty:2, due:"2026-10-30", margin:.35});
+  accepted = true;
+  await form.onsubmit({preventDefault() {}});
+  assert.equal(JSON.parse(calls.at(-1).body).request_key, first.request_key, "retries keep their key");
+  assert(root.querySelector(".rush-verdict"));
+  assert(root.querySelector(".scenario-metrics").textContent.includes("60% → 50%"));
+  assert(root.querySelector('[data-whatif-pick="draft_quote"]'));
+  ctx.dispose();
+}
+for (const status of [200, 503]) {
+  const root = new Element(); transport = () => reply({products:[], customers:[], message:"Catalog unavailable"}, status);
+  await screens.get("rush").render(root, context());
+  assert(root.querySelector(".empty"));
+  assert(!root.querySelector("[data-rush-form]"), "unavailable catalog has actionable feedback");
+}
+
+// Gatekeeper keeps the dictionary usable, escapes source words, and exposes soft deletion.
+for (const lang of ["en", "ru"]) {
+  core.state.lang = lang; const root = new Element(), ctx = context(); calls = [];
+  transport = url => reply(url === "/api/gate" ? {message:"FACT: 1 line", message_ru:"ФАКТ: 1 строка",
+    lines:[{order_id:11, number:211, product:"Demo <chair>", source_quote:"<source>", message:"Needs fabric", message_ru:"Нужна ткань"}]} :
+    url === "/api/slang/aliases" ? {aliases:[{id:8, kind:"product", phrase:"<chair>", meaning:{value:1}},
+      {id:9, kind:"phrase", phrase:"demo correction", meaning:{}, description:"Demo meaning"}], components:[]} :
+    url === "/api/slang/catalog" ? {products:[{id:1, name:"Demo product"}], stages:[]} : {message:"Removed", message_ru:"Удалено"});
+  await screens.get("gate").render(root, ctx);
+  assert(root.querySelector(".gate-card"));
+  assert(root.innerHTML.includes("&lt;source&gt;") && !root.innerHTML.includes("<source>"));
+  assert.equal(root.querySelectorAll(".tbl").length, 2);
+  assert(root.innerHTML.includes(lang === "en" ? "No part work recorded yet" : "Работа над деталями пока не записана"));
+  await root.querySelector('[data-delete-alias="9"]').click();
+  assert.equal(calls.at(-1).url, "/api/slang/aliases/9");
+  assert.equal(calls.at(-1).method, "DELETE");
+  ctx.dispose();
+}
+core.state.lang = "ru";
 const metric = value => ({ tag: "FACT", value });
 const offer = { id: 91, product: "Demo cloud", message: "Launch ESTIMATE 2", message_ru: "Запустить ОЦЕНКА 2" };
 const overview = { capacity: { available_launch_qty: metric(2) }, items: [], assumptions: { en: "Rules", ru: "Правила" }, imports: [], proposals: [offer] };

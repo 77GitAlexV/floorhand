@@ -16,7 +16,7 @@ registerScreen({
     }
     const cat = await api("/api/slang/catalog");
     if (!cat.ok) { root.textContent = cat.message; return; }
-    let proposal = null, recognition = null, listening = false, busy = false;
+    let proposal = null, recognition = null, listening = false, busy = false, typedOnly = false;
     root.innerHTML = `
       <style>
         .glue-mode {max-width:760px;margin:auto;text-align:center;padding-bottom:40px}
@@ -59,6 +59,7 @@ registerScreen({
     const choice = root.querySelector("#glue-choice");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     function typedFallback(text) {
+      typedOnly = true;
       root.querySelector("#glue-typed").open = true;
       sentence.textContent = text;
       palm.textContent = words("TYPE BELOW", "ВВЕДИТЕ ТЕКСТ НИЖЕ");
@@ -115,6 +116,7 @@ registerScreen({
     function listen(confirmation = false) {
       if (!SpeechRecognition || busy || !live()) return;
       stop();
+      typedOnly = false;
       recognition = new SpeechRecognition();
       recognition.lang = state.lang === "ru" ? "ru-RU" : "en-US";
       recognition.interimResults = false;
@@ -129,7 +131,7 @@ registerScreen({
       recognition.onerror = () => {
         if (live()) typedFallback(words("Microphone unavailable. Type the phrase below, or return to tap marking.", "Микрофон недоступен. Введите фразу ниже или вернитесь к обычным отметкам."));
       };
-      recognition.onend = () => { listening = false; if (live()) palm.textContent = words("HOLD TO TALK", "ДЕРЖИТЕ И ГОВОРИТЕ"); };
+      recognition.onend = () => { listening = false; if (live() && !typedOnly) palm.textContent = words("HOLD TO TALK", "ДЕРЖИТЕ И ГОВОРИТЕ"); };
       try { recognition.start(); listening = true; }
       catch { typedFallback(words("Try the microphone again or type below.", "Попробуйте микрофон ещё раз или введите текст ниже.")); }
     }

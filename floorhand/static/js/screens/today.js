@@ -116,12 +116,13 @@ function changeForm(c) {
 registerScreen({
   id: "today", roles: ["owner"], icon: "today", title: lang => lang === "ru" ? "Сегодня" : "Today",
   async render(root, ctx) {
-    const [f, m] = await Promise.all([api("/api/owner/today"), api(`/api/owner/morning?lang=${state.lang}`)]);
+    const [f, m, gate] = await Promise.all([api("/api/owner/today"), api(`/api/owner/morning?lang=${state.lang}`), api("/api/gate/summary")]);
     if (!f.ok) { if (!f.silent) root.innerHTML = empty(f.message, "alert"); return; }
     const s = f.summary;
     const bn = s.bottleneck;
     root.innerHTML = `
       <header class="head"><div><h1>${t("todayTitle")}</h1><p class="sub">${esc(fmtDate(f.date, { withDay: true }))}</p></div></header>
+      ${gate.ok ? `<a class="pill warn" href="#/gate">${esc(gate.message)}</a>` : ""}
       <div class="stats">
         ${stat(t("openOrders"), s.open_orders)}
         ${stat(t("readyShip"), s.ready, { kind: s.ready ? "good" : "" })}

@@ -511,7 +511,7 @@ def seed(conn, rnd):
 
 
 def seed_finalize(conn, rnd):
-    """The saved scenario must include demo events added by later feature seeds."""
+    """Build the stored demo scenario only after every feature has seeded its work."""
     who = conn.execute("SELECT id FROM people WHERE role='owner' LIMIT 1").fetchone()
     if who and not conn.execute("SELECT 1 FROM agent_actions WHERE kind='ripple'").fetchone():
         conn.commit()

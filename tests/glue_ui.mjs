@@ -7,10 +7,10 @@ const source = fs.readFileSync(new URL("../floorhand/static/js/screens/handsfree
   .replace(/^import .*?;$/gm, "") + "";
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-async function surface(lang = "en", withSpeech = true) {
+async function surface(lang = "en", withSpeech = true, role = "worker") {
   const calls = [], recognizers = [], utterances = [], observers = [];
   let screen;
-  const state = { lang, screen: "handsfree", me: { role: "worker", stage_id: 4 } };
+  const state = { lang, screen: "handsfree", me: { role, stage_id: role === "worker" ? 4 : null } };
   const meaning = { product_id: 2, qty: 2, stage_id: 4, option: "curved legs" };
   let failDecision = false;
   const api = async (path, body) => {
@@ -25,7 +25,7 @@ async function surface(lang = "en", withSpeech = true) {
   const elements = new Map();
   function element(key) {
     if (!elements.has(key)) elements.set(key, { hidden: key === "#glue-choice", disabled: false, textContent: "",
-      setPointerCapture() {}, elements: Object.fromEntries(["text", "product_id", "qty", "stage_id", "option", "component"].map(k => [k, { value: "" }])) });
+      focus() {}, setPointerCapture() {}, elements: Object.fromEntries(["text", "product_id", "qty", "stage_id", "option", "component"].map(k => [k, { value: "" }])) });
     return elements.get(key);
   }
   const root = { isConnected: true, innerHTML: "", querySelector: element,
@@ -50,6 +50,8 @@ async function surface(lang = "en", withSpeech = true) {
     MutationObserver: Observer,
     document: { getElementById() { return {}; } },
   });
+  assert(screen.roles.includes("worker"), "worker phones can reach Glue mode through the router");
+  assert(screen.roles.includes("office"), "owners reach the explanatory screen");
   await screen.render(root);
   return { root, element, calls, recognizers, utterances, observers, state,
     failDecisions(value) { failDecision = value; } };
@@ -103,4 +105,24 @@ assert(ru.recognizers.at(-1).aborts > 0);
 
 const fallback = await surface("ru", false);
 assert(fallback.element("#glue-sentence").textContent.includes("нет распознавания речи"));
+assert.equal(fallback.element("#glue-typed").open, true);
+const typed = fallback.element("#glue-type");
+typed.elements.text.value = "два харбора на дугах";
+await typed.onsubmit({preventDefault() {}, target: typed});
+await tick();
+assert(fallback.calls.some(c => c.path === "/api/slang/propose" && c.body.text === typed.elements.text.value));
+assert(!fallback.calls.some(c => c.path.endsWith("/decide")), "typed fallback also needs human confirmation");
+await fallback.element("#glue-yes").onclick();
+assert(fallback.calls.some(c => c.path === "/api/slang/7/decide" && c.body.yes === true));
+const noMic = await surface("en");
+noMic.element("#glue-talk").onpointerdown({preventDefault() {}, pointerId:1});
+noMic.recognizers[0].onerror();
+noMic.recognizers[0].onend();
+assert.equal(noMic.element("#glue-typed").open, true);
+assert.equal(noMic.element("#glue-talk").textContent, "TYPE BELOW", "microphone failure keeps the typed fallback visible after recognition ends");
+for (const lang of ["en", "ru"]) {
+  const owner = await surface(lang, false, "owner");
+  assert(owner.root.innerHTML.includes(lang === "en" ? "Sign in as a demo worker" : "Войдите на телефоне как демо-работник"));
+  assert.equal(owner.calls.length, 0, "owner guidance needs no worker API access");
+}
 console.log("FACT: hands-free UI event checks passed (read-back ordering, speech confirmation, correction, retries, cleanup, fallback).");

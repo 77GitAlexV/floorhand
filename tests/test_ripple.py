@@ -21,8 +21,8 @@ def conn(tmp_path, monkeypatch):
     c = db.connect(tmp_path / "ripple.db")
     db.init(c)
     c.executescript("""
-        INSERT INTO settings VALUES('tz','Asia/Bangkok'),('currency','$'),
-            ('fabrics','["Demo cloth"]'),('frames','["Demo oak"]');
+        INSERT INTO settings VALUES('tz','Asia/Bangkok'),('currency','$');
+        INSERT INTO settings VALUES('fabrics','["Demo weave"]'),('frames','["Demo finish"]');
         INSERT INTO stages VALUES(1,'cut','Cutting','Раскрой',1,2),(2,'uph','Upholstery','Обивка',2,2);
         INSERT INTO people(id,name,role,stage_id) VALUES
             (1,'Demo Cutter','worker',1),(2,'Demo Upholsterer','worker',2),
@@ -42,7 +42,7 @@ def conn(tmp_path, monkeypatch):
 
 def order(conn, qty=2, customer=1, due="2026-10-30"):
     return domain.create_order(conn, product_id=1, qty=qty, customer_id=customer, due_date=due,
-                               variant="Demo cloth · Demo oak", source="test")
+                               variant="Demo weave · Demo finish", source="test")
 
 
 def propose(conn, text="saw is broken for 2 days", key="r1"):
@@ -92,6 +92,18 @@ def test_lateness_is_caused_by_shock_and_baseline_is_stated_separately(conn):
     assert wait["total_late_orders"] == 2
     assert {m["order_id"] for m in card["movements"]} == {already_late, newly_late}
     assert all(o["saved_orders"] <= 1 for o in card["options"])
+
+
+def test_saw_resolves_cutting_code_instead_of_stage_position(conn):
+    conn.execute("UPDATE stages SET code='prep' WHERE id=1")
+    conn.execute("UPDATE stages SET code='cut' WHERE id=2")
+    oid = order(conn, qty=1)
+    uid = conn.execute("SELECT id FROM units WHERE order_id=?", (oid,)).fetchone()[0]
+    domain.mark_done(conn, 1, uid)
+    card = ripple.build_card(conn, "Пила сломана на 2 дня", False)[0]
+    assert card["shock"]["stage_id"] == 2
+    assert card["movements"][0]["order_id"] == oid
+    assert card["movements"][0]["new_eta"] > card["movements"][0]["old_eta"]
 
 
 def test_downstream_buffer_keeps_final_eta_but_reports_queued_stage_delay(conn):

@@ -6,3 +6,4 @@ data/
 .env
 .deploy-maintenance.lock
 .merge-cx/
+.polish/

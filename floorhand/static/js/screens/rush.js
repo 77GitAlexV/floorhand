@@ -9,6 +9,10 @@ export async function mountRush(host, ctx) {
   const r = await api("/api/rush/catalog");
   if (ctx.isActive && !ctx.isActive()) return;
   if (!r.ok) { host.innerHTML = empty(r.message || L("Could not load products. Reopen this screen to retry.", "Не удалось загрузить изделия. Откройте экран снова."), "alert"); return; }
+  if (!r.products.length) {
+    host.innerHTML = empty(L("Add a product to the catalog before calculating an urgent order.", "Добавьте изделие в каталог перед расчётом срочного заказа."));
+    return;
+  }
   host.innerHTML = `<header class="head"><div><h1>${L("Urgent order: can we promise it?", "Срочный заказ: можем обещать?")}</h1><p class="sub">${L("Check the queue, displaced promises and contribution margin.", "Проверьте очередь, сдвинутые сроки и маржу.")}</p></div></header>
     <section class="panel stack"><form class="stack" data-rush-form>
       <div class="scenario-form-grid">

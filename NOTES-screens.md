@@ -125,8 +125,26 @@ Modules without HTTP route declarations: `__init__.py`, `ask.py`, `paperwork_htm
 | `simulator.py` | `POST /api/sim/start` | **New** Live shop > start demo |
 | `simulator.py` | `POST /api/sim/stop` | **New** Live shop > pause demo |
 | `simulator.py` | `GET /api/live` | **New** Live shop > SSE stream |
+| `ripple.py` | `POST /api/ripple/report` | Report disruption; Today and Floor > What if (`ripple-report.js`, `ripple.js`) |
+| `ripple.py` | `GET /api/ripple/cards` | Floor > What if; hidden Ripple screen (`ripple.js`); Today receives these cards through `/api/owner/today` |
+| `ripple.py` | `POST /api/ripple/cards/{aid}/apply` | Today / Floor / Ripple > choose stored scenario (`ripple.js`) |
+| `ripple.py` | `POST /api/ripple/cards/{aid}/reject` | Today / Floor / Ripple > decline scenario or rush card (`ripple.js`) |
+| `rush.py` | `GET /api/rush/catalog` | Today / Floor > What if > urgent order; hidden Rush screen (`rush.js`) |
+| `rush.py` | `POST /api/rush/quote` | Today / Floor > What if > calculate urgent order; hidden Rush screen (`rush.js`) |
+| `rush.py` | `POST /api/rush/cards/{aid}/apply` | Today / Floor / Ripple > save stored conditional quote (`ripple.js`) |
+| `slang.py` | `GET /api/slang/catalog` | Hands-free > correction selectors (`handsfree.js`); authenticated money-free catalog |
+| `slang.py` | `POST /api/slang/propose` | Hands-free > speech or typed report (`handsfree.js`); Work > Speak opens Hands-free (`marking.js`) |
+| `slang.py` | `POST /api/slang/{action_id}/fix` | Hands-free > correct interpretation (`handsfree.js`) |
+| `slang.py` | `POST /api/slang/{action_id}/decide` | Hands-free > Yes/No or spoken confirmation (`handsfree.js`) |
+| `slang.py` | `GET /api/slang/aliases` | Gatekeeper > shop dictionary and recorded part work (`gate.js`) |
+| `slang.py` | `DELETE /api/slang/aliases/{alias_id}` | Gatekeeper > remove learned alias (`gate.js`) |
+| `gate.py` | `GET /api/gate/summary` | Floor and Today > held-lines link to Gatekeeper |
+| `gate.py` | `GET /api/gate` | Gatekeeper > missing specifications (`gate.js`) |
+| `gate.py` | `POST /api/gate/{order_id}/question` | Gatekeeper > save customer question to dry-run outbox (`gate.js`) |
+| `gate.py` | `POST /api/gate/{order_id}/answer` | Gatekeeper > paste customer answer and propose specifications (`gate.js`) |
+| `gate.py` | `POST /api/gate/answers/{action_id}/confirm` | Gatekeeper > confirm stored specifications (`gate.js`) |
 
-FACT: audited explicit routes: 102.
+FACT: audited explicit routes: 120.
 
 ## Run / Запуск
 

@@ -41,6 +41,26 @@ assert(html.includes("data-whatif-pick=\"draft_quote\""));
 state.lang = "ru";
 html = ripple.namespace.whatIfCard(card);
 assert(html.includes("неизвестно")); assert(html.includes("&lt;b&gt;Демо&lt;/b&gt;"));
+const disruption = {...card, kind:"ripple", quote:undefined, shock:{kind:"machine", stage_id:1, start:"2026-10-28", until:"2026-10-30"},
+  stages:[{id:1, name:{en:"Cutting", ru:"Раскрой"}}, {id:2, name:{en:"Sewing", ru:"Шитьё"}}],
+  starvation:[{stage_id:2, at:"2026-10-29T14:46+07:00", ready:2, capacity:3}],
+  movements:[{number:211, customer:"Demo <customer>", old_eta:"2026-10-29", new_eta:"2026-11-02", notify:true}],
+  options:[{id:"wait", label:{en:"Wait", ru:"Ждать"}, late_orders:1, baseline_late_orders:64, total_late_orders:65, saved_orders:0, cost:0, movements:[]},
+    {id:"half_shift", label:{en:"Overtime", ru:"Сверхурочно"}, late_orders:0, baseline_late_orders:64, total_late_orders:64, saved_orders:1, cost:15, movements:[]}]};
+for (const lang of ["en", "ru"]) {
+  state.lang = lang;
+  html = ripple.namespace.whatIfCard(disruption);
+  assert(html.includes(lang === "en" ? "Thu 14:46" : "чт 14:46"));
+  assert(!html.includes("14:46+07:00"), "timeline shows the shop clock without ISO noise");
+  assert(html.includes('class="ripple-timeline"'));
+  assert(html.includes(lang === "en" ? "Already late in baseline" : "Уже опаздывали в базовом плане"));
+  assert(html.includes("64") && html.includes("65"));
+  assert(html.includes("Demo &lt;customer&gt;"));
+  assert.equal((html.match(/class="btn primary/g) || []).length, 1);
+  assert(html.includes('<details class="disc" data-customer-notices>'), "notices start collapsed");
+  assert(html.includes(lang === "en" ? "updates the plan" : "изменяет план"));
+  assert(html.includes('class="tag calc"') && html.includes('class="tag estimate"'));
+}
 const container = {dataset: {kind:"rush", whatif:"7"}};
 const pick = {dataset: {whatifPick:"draft_quote"}, closest: () => container};
 const reject = {closest: () => container};
