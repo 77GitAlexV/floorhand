@@ -421,9 +421,7 @@ def _event_answer(conn, actor: Actor, ev: sqlite3.Row, status: str, lang: str,
     st = _stage(conn, ev["stage_id"])
     label = domain.unit_label(conn, ev["unit_id"])
     amount = domain.rate(conn, ev["unit_id"], ev["stage_id"])
-    product = conn.execute("SELECT p.name FROM units u JOIN orders o ON o.id = u.order_id "
-                           "JOIN products p ON p.id = o.product_id WHERE u.id = ?",
-                           (ev["unit_id"],)).fetchone()["name"]
+    product = _product(conn, ev["unit_id"])
     sname = _sname(st, lang)
     who = ""
     if actor.tablet:  # on the shared tablet always say whose mark it is
@@ -814,6 +812,12 @@ def propose(conn: sqlite3.Connection, actor: Actor, text: str, *, method: str = 
             + ("" if doable else T(lang, " Nothing to record.", " Записывать нечего."))}
 
 
+def _product(conn, unit_id: int) -> str:
+    return conn.execute("SELECT p.name FROM units u JOIN orders o ON o.id = u.order_id "
+                        "JOIN products p ON p.id = o.product_id WHERE u.id = ?",
+                        (unit_id,)).fetchone()["name"]
+
+
 def _items_for(conn, actor: Actor, it: speech.Intent, stage, taken: set, lang: str) -> list[dict]:
     sname = _sname(stage, lang)
     if it.kind == "mark":
@@ -834,7 +838,8 @@ def _items_for(conn, actor: Actor, it: speech.Intent, stage, taken: set, lang: s
         taken.add(uid)
         label = domain.unit_label(conn, uid)
         return [{"type": "mark", "unit_id": uid, "label": label, "quote": it.quote,
-                 "stage": stage["name_en"], "say": f"{label}, {sname}"}]
+                 "product": _product(conn, uid), "stage": stage["name_en"],
+                 "say": f"{label} {_product(conn, uid)}, {sname}"}]
     if it.kind == "mark_qty":
         cands = [u for u in _waiting_at(conn, stage["id"]) if u not in taken and
                  conn.execute("SELECT 1 FROM units u JOIN orders o ON o.id = u.order_id JOIN "
@@ -846,7 +851,8 @@ def _items_for(conn, actor: Actor, it: speech.Intent, stage, taken: set, lang: s
             taken.add(uid)
             label = domain.unit_label(conn, uid)
             out.append({"type": "mark", "unit_id": uid, "label": label, "quote": it.quote,
-                        "stage": stage["name_en"], "say": f"{label}, {sname}"})
+                        "product": _product(conn, uid), "stage": stage["name_en"],
+                        "say": f"{label} {_product(conn, uid)}, {sname}"})
         if len(picked) < (it.qty or 1):
             out.append({"type": "problem", "quote": it.quote,
                         "say": T(lang, f"only {len(picked)} {it.product_kind} waiting at {sname}, "

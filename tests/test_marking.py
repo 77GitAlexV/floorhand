@@ -659,3 +659,15 @@ def test_tablet_signs_out_at_end_of_day(conn, clock):
     clock.t = clock.t.replace(hour=20, minute=0, second=30)
     assert mk.tablet_state(conn, mk._tablet(conn, token))["acting"] is None
     assert conn.execute("SELECT end_reason FROM tablet_shifts").fetchone()[0] == "end_of_day"
+
+
+def test_answers_in_the_workers_language(conn):
+    me = Actor(worker_at(conn, "uph"))
+    conn.execute("UPDATE people SET lang = 'ru' WHERE id = ?", (me.person_id,))
+    o, (u,) = waiting_order(conn, "uph")
+    r = mk.mark(conn, me, code=str(o["number"]))
+    assert r["message"].startswith("Записано:") and "Обивка" in r["message"]
+    p = mk.propose(conn, me, "кончилась ткань беж")
+    assert p["message"].startswith("Понял так:")
+    with pytest.raises(DomainError, match="Заказа №99999 нет"):
+        mk.mark(conn, me, code="99999")
