@@ -403,6 +403,8 @@ def today_feed(conn: sqlite3.Connection, person_id: int) -> dict:
         "'late_risk', 'idle_capacity') ORDER BY id")]
     order = {k: i for i, k in enumerate(("plan", "shortage", "late_risk", "idle_capacity"))}
     cards.sort(key=lambda c: (order[c["kind"]], c["id"]))
+    from . import ripple
+    cards += ripple.cards(conn)
     decided = [_card_out(conn, r) for r in conn.execute(
         "SELECT * FROM agent_actions WHERE status != 'proposed' AND kind IN ('plan', 'shortage', "
         "'late_risk', 'idle_capacity') AND substr(decided_at, 1, 10) = ? "
@@ -651,7 +653,7 @@ def morning(conn: sqlite3.Connection, person_id: int, lang: str, tablet: bool = 
 # --- routes --------------------------------------------------------------------
 
 def owner_only(s: Session = Depends(session)) -> Session:
-    if s.role != "owner":
+    if s.role != "owner" or s.tablet:
         raise HTTPException(403, "This screen is for the owner.")
     return s
 
@@ -698,6 +700,8 @@ def owner_morning(lang: str = "en", s: Session = Depends(session), conn=Depends(
 
 @router.get("/api/owner/outbox")
 def owner_outbox(s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
+    if s.tablet:
+        raise HTTPException(403, "Use a private office screen. / Откройте личный экран офиса.")
     rows = conn.execute("SELECT * FROM outbox ORDER BY id DESC LIMIT 50").fetchall()
     return {"rows": [dict(r) for r in rows]}
 

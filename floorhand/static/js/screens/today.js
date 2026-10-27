@@ -5,6 +5,7 @@
 // in the shadow first and only works after its hit rate is proven AND switched on.
 import { registerScreen, addStrings, api, t, esc, name, state, fmtDate, flash, toast } from "../core.js";
 import { icon, stat, btn, empty } from "../ui.js";
+import { whatIfCard, bindWhatIfCards, mountWhatIf } from "./ripple.js";
 
 addStrings({
   en: {
@@ -63,6 +64,7 @@ function kindStats(c) {
 }
 
 function decisionCard(c) {
+  if (c.kind === "ripple" || c.kind === "rush") return whatIfCard(c);
   const hot = c.kind === "late_risk" || c.kind === "shortage";
   const ic = { shortage: "box", late_risk: "clock", plan: "layers" }[c.kind] || "spark";
   return `<article class="decision k-${c.kind} ${hot ? "hot" : ""} ${c.shadow ? "shadowed" : ""}" data-card="${c.id}">
@@ -145,6 +147,8 @@ registerScreen({
           ${c.result && c.result.reason ? `<small class="muted">— ${esc(c.result.reason)}</small>` : ""}</span></li>`).join("")}</ul>` : ""}`;
     bindCards(root, f, ctx);
     bindAsk(root);
+    bindWhatIfCards(root, ctx);
+    await mountWhatIf(root, ctx);
   },
 });
 
