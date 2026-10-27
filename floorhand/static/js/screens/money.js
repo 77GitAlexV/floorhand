@@ -25,7 +25,7 @@ registerScreen({
       <header class="head"><div><h1>${t("money")}</h1></div></header>
       <div class="money-hero"><div class="big">${money(m.currency, total)}</div><div class="lbl">${t("earned7")}</div></div>
       <h2 class="sec">${t("week")}</h2>
-      <ul class="week">${m.days.map(d => `<li>
+      <ul class="week">${m.days.map(d => `<li class="${d.date === last ? "today" : ""}">
         <span class="d ${d.date === last ? "today" : ""}">${esc(fmtDate(d.date, { withDay: true }).split(" ").slice(0, 2).join(" "))}</span>
         <span class="b"><i style="width:${Math.round(100 * d.money / max)}%"></i></span>
         <span class="v">${money(m.currency, d.money)}<small>${d.count ? pcs(d.count) : ""}</small></span></li>`).join("")}</ul>

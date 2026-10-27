@@ -9,16 +9,16 @@ addStrings({
     shippedToday: "Shipped today", owedToUs: "Owed to us", pickCustomer: "Pick a customer on the left.",
     alreadyOwes: "Already owes {m}", stillAt: "still at {stage}", total: "Total", payment: "Payment",
     p_paid: "Paid in full", p_credit: "On account", p_partial: "Part paid", paidNow: "Paid now",
-    shipAndPrint: "SHIP AND PRINT", scope: "Shipping {n} piece(s) to {c}", pickItems: "Tick what goes.", pickPay: "Choose how it is paid.",
-    noteN: "Note №{n}", invoice: "delivery note",
+    shipAndPrint: "SHIP AND PRINT", scope: "Shipping {n} piece(s) to {c}.", pickItems: "Tick what goes.", pickPay: "Choose how it is paid.",
+    noteN: "Note №{n}", invoice: "delivery note", conseq: "Paid now {paid}; on account after this: {owed}.",
   },
   ru: {
     shipping: "Отгрузки", readyToShip: "Готово к отгрузке", nothingReady: "Пока ничего не готово.", readyOf: "{a} из {b} готово",
     shippedToday: "Сегодня отгружено", owedToUs: "Должны нам", pickCustomer: "Выбери клиента слева.",
     alreadyOwes: "Уже должен {m}", stillAt: "ещё на {stage}", total: "Итого", payment: "Оплата",
     p_paid: "Всё оплачено", p_credit: "В долг", p_partial: "Часть", paidNow: "Оплачено сейчас",
-    shipAndPrint: "ОТГРУЗИТЬ И НАПЕЧАТАТЬ", scope: "Отгружаем {n} шт — {c}", pickItems: "Отметь, что едет.", pickPay: "Выбери, как оплачено.",
-    noteN: "Накладная №{n}", invoice: "накладная",
+    shipAndPrint: "ОТГРУЗИТЬ И НАПЕЧАТАТЬ", scope: "Отгружаем {n} шт — {c}.", pickItems: "Отметь, что едет.", pickPay: "Выбери, как оплачено.",
+    noteN: "Накладная №{n}", invoice: "накладная", conseq: "Оплачено сейчас {paid}; долг после отгрузки: {owed}.",
   },
 });
 
@@ -69,7 +69,7 @@ async function renderPanel(root, ctx, customerId) {
       <span class="cr-right">${i.ready ? money(cur, i.price) : ""}</span></label>`).join("")}</div>
     <div class="ship-foot">
       <div class="total"><span>${t("total")}</span><b id="total"></b></div>
-      <div class="pay">${["paid", "credit", "partial"].map(p => `<button type="button" data-pay="${p}">${t("p_" + p)}</button>`).join("")}</div>
+      <div class="pay">${["paid", "credit", "partial"].map(p => `<button type="button" data-pay="${p}">${icon("check")}${t("p_" + p)}</button>`).join("")}</div>
       <label class="partial" id="partialBox" hidden>${t("paidNow")} <input id="paidAmount" type="number" min="0" inputmode="numeric"></label>
       <p class="scope" id="scope"></p>
       ${btn({ label: t("shipAndPrint"), icon: "truck", kind: "primary", cls: "hero", attrs: 'id="doShip"', disabled: true })}
@@ -78,10 +78,14 @@ async function renderPanel(root, ctx, customerId) {
   const update = () => {
     const picked = boxes.filter(x => x.checked);
     panel.querySelector("#total").textContent = money(cur, picked.reduce((s, x) => s + Number(x.dataset.price), 0));
-    panel.querySelector("#scope").textContent = !picked.length ? t("pickItems") : !payment ? t("pickPay") : t("scope", { n: picked.length, c: c.name });
+    const total = picked.reduce((s, x) => s + Number(x.dataset.price), 0);
+    const paidNow = payment === "paid" ? total : payment === "credit" ? 0 : Math.min(total, Number(panel.querySelector("#paidAmount").value || 0));
+    const consequence = payment ? ` ${t("conseq", { paid: money(cur, paidNow), owed: money(cur, total - paidNow + (c.owed || 0)) })}` : "";
+    panel.querySelector("#scope").textContent = !picked.length ? t("pickItems") : !payment ? t("pickPay") : t("scope", { n: picked.length, c: c.name }) + consequence;
     panel.querySelector("#doShip").disabled = !picked.length || !payment;
   };
   boxes.forEach(x => x.onchange = update);
+  panel.querySelector("#paidAmount").oninput = update;
   panel.querySelectorAll("[data-pay]").forEach(b => b.onclick = () => {
     payment = b.dataset.pay;
     panel.querySelectorAll("[data-pay]").forEach(x => x.classList.toggle("on", x === b));

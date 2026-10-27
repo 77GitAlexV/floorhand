@@ -53,11 +53,13 @@ registerScreen({
     const todayLine = w.show_money && w.today.money !== null
       ? `<span class="big">${pcs(w.today.count)} · ${money(w.currency, w.today.money)}</span>`
       : `<span class="big">${pcs(w.today.count)}</span>`;
+    const bump = sessionStorage.getItem("fh_bump") === "1";
+    if (bump) sessionStorage.removeItem("fh_bump");
     const hour = new Date().getHours();
     const evening = hour >= 16 && w.today.count > 0 && !sessionStorage.getItem("fh_evening_ok");
     root.innerHTML = `
       <header class="work-head"><h1>${esc(name(w.stage))}</h1><div class="date">${esc(fmtDate(w.date, { withDay: true }))}<br><span class="muted">${esc(w.person.name)}</span></div></header>
-      <div class="work-today"><span class="lbl">${t("today")}</span>${todayLine}${w.today.price_pending ? `<span class="pend">· ${w.today.price_pending} ${t("pricePending")}</span>` : ""}</div>
+      <div class="work-today"><span class="lbl">${t("today")}</span>${bump ? todayLine.replace('class="big"', 'class="big bump"') : todayLine}${w.today.price_pending ? `<span class="pend">· ${w.today.price_pending} ${t("pricePending")}</span>` : ""}</div>
       ${evening ? `<div class="evening">${icon("clock")}<span class="grow">${t("evening", { n: w.today.count })}</span>
         ${btn({ label: t("eveningYes"), kind: "primary", attrs: 'id="evYes"' })}${btn({ label: t("eveningAdd"), kind: "secondary", attrs: "data-soon" })}</div>` : ""}
       <h2 class="sec">${t("assigned")} <b>${w.mine.length}</b></h2>
@@ -90,6 +92,7 @@ registerScreen({
         sub: sum !== null ? `${t("today")}: ${pcs(count)} · ${money(w.currency, sum)}` : `${t("today")}: ${pcs(count)}`,
         big: r.already ? "" : plus ? `+${plus}` : "",
       });
+      if (!r.already) sessionStorage.setItem("fh_bump", "1");
       ctx.refresh();
     });
     root.querySelectorAll("[data-take]").forEach(b => b.onclick = async () => {

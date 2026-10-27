@@ -18,7 +18,7 @@ addStrings({
     ordered: "Ordered", inProd: "In production", readyQ: "Ready", shippedQ: "Shipped", spec: "Specification",
     commercial: "Customer & price", unitPrice: "Price / pc", created: "Created", sourceWord: "Source", noHistory: "No work recorded yet.",
     recordedAt: "{who} · {stage}{pc} · {t}", src_manual: "typed in", src_sheet: "table", src_email: "e-mail", src_chat: "chat", src_intake: "intake",
-    draftSaved: "Text kept on this device.", showMore: "Show {n} more", showLess: "Show fewer",
+    offlineRules: "offline rules (no model spend)", draftSaved: "Text kept on this device.", showMore: "Show {n} more", showLess: "Show fewer",
   },
   ru: {
     orders: "Заказы", newOrder: "Новый заказ", intakeHint: "Вставь письмо, сообщение из чата или таблицу — или перетащи сюда файл .csv.",
@@ -34,7 +34,7 @@ addStrings({
     ordered: "Заказано", inProd: "В работе", readyQ: "Готово", shippedQ: "Отгружено", spec: "Описание",
     commercial: "Клиент и цена", unitPrice: "Цена / шт", created: "Создан", sourceWord: "Откуда", noHistory: "Работа ещё не отмечалась.",
     recordedAt: "{who} · {stage}{pc} · {t}", src_manual: "вручную", src_sheet: "таблица", src_email: "письмо", src_chat: "чат", src_intake: "разбор",
-    draftSaved: "Текст сохранён на этом устройстве.", showMore: "Показать ещё {n}", showLess: "Свернуть",
+    offlineRules: "офлайн-правила (без трат на модель)", draftSaved: "Текст сохранён на этом устройстве.", showMore: "Показать ещё {n}", showLess: "Свернуть",
   },
 });
 
@@ -189,13 +189,13 @@ function renderProposal(root, ctx, p) {
         val = f.status === "ok" ? `<b>${esc(f.value)}</b>` : `<span class="muted">${t("missing")}</span>`;
       }
       return `<dt class="st-${unresolved ? "check" : f.status}">${t("f_" + k)}${unresolved ? ` · ${t("checkWord")}` : ""}</dt><dd>${val}
-        ${f.quote ? `<small class="quote" data-quote="${esc(f.quote)}">“${esc(f.quote)}”</small>` : ""}
+        ${f.quote ? `<small class="quote" data-quote="${esc(f.quote)}" title="${esc(f.quote)}">${icon("link")}<span>“${esc(f.quote)}”</span></small>` : ""}
         ${unresolved && f.note ? `<small class="note">${esc(f.note)}</small>` : ""}</dd>`;
     }).join("")}</dl></article>`;
   const cards = open.map(card).join("");
   out.innerHTML = `
     <div class="review">
-      <aside><h3><span>${t("source")}</span><span class="muted">${t("readBy")} ${esc(p.model)}</span></h3><pre class="source" id="src">${markQuotes(p.source, quotes)}</pre></aside>
+      <aside><h3><span>${t("source")}</span><span class="muted" style="text-transform:none;letter-spacing:0">${t("readBy")}: ${esc(p.model === "offline-rules" ? t("offlineRules") : p.model)}</span></h3><pre class="source" id="src">${markQuotes(p.source, quotes)}</pre></aside>
       <div><h3><span>${t("proposed")}</span><span>${open.length}</span></h3>${cards || empty(t("nothingToCreate"), "check")}
         <div class="review-foot">
           <span class="summary">${t("createN", { n: count }).replace(/^(\D*)/, "")} ${toCheck ? `· <span class="hot-ink">${t("toCheck", { n: toCheck })}</span>` : ""}</span>

@@ -34,12 +34,11 @@ registerScreen({
         ${stat(t("doneToday"), totals.d, { sub: `${t("capacity")}: ${totals.c}` })}
         ${hot ? stat(t("bottleneck"), esc(name(hot)), { kind: "hot", sub: t("whyHot", { q: hot.queue, c: hot.capacity, d: Math.ceil(hot.queue / Math.max(hot.capacity, 1)) }) }) : ""}
       </div>
-      <h2 class="sec">${t("flowTitle")}</h2>
-      <div class="flow" aria-hidden="true">${st.map(s => `<div class="f ${s.bottleneck ? "hot" : ""}"><i style="height:${Math.max(3, Math.round(40 * s.queue / maxQ))}px"></i><span><span>${esc(name(s))}</span><span>${s.queue}</span></span></div>`).join("")}</div>
       <div class="pipeline">${st.map(s => `<section class="stage-col ${s.bottleneck ? "hot" : ""}">
         ${icon("chevron", "arrow")}
         <h3>${esc(name(s))}${s.bottleneck ? `<span class="hot-tag">${icon("flame")}${t("bottleneck")}</span>` : ""}</h3>
         <div class="queue"><b>${s.queue}</b><span>${t("queue")}</span></div>
+        <div class="qbar" title="${t("flowTitle")}"><i style="width:${Math.round(100 * s.queue / maxQ)}%"></i></div>
         <div class="cap"><span>${t("doneOf", { a: s.done_today, b: s.capacity })}</span>${bar(s.done_today / Math.max(s.capacity, 1), s.bottleneck ? "hot" : "")}</div>
         ${s.bottleneck ? `<p class="why">${t("whyHot", { q: s.queue, c: s.capacity, d: Math.ceil(s.queue / Math.max(s.capacity, 1)) })}</p>` : ""}
         <ul class="people">${s.people.length ? s.people.map(p => `<li class="${p.today ? "" : "idle"}"><span>${esc(p.name)}</span><b>${p.today}</b></li>`).join("") : `<li class="idle">${t("noPeople")}</li>`}</ul>

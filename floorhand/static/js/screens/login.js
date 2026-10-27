@@ -34,7 +34,7 @@ registerScreen({
       if (!g) groups.push(g = { stage: p.stage, stage_ru: p.stage_ru, people: [] });
       g.people.push(p);
     }
-    const tile = p => `<button type="button" class="tile ${p.stage ? "" : "office-tile"}" data-id="${p.id}" data-name="${esc(p.name)}">
+    const tile = p => `<button type="button" class="tile" data-id="${p.id}" data-name="${esc(p.name)}">
         ${avatar(p.name)}
         <span class="t-text"><b>${esc(p.name)}</b><span>${esc(p.stage ? (state.lang === "ru" ? p.stage_ru : p.stage) : t("role_" + p.role))}</span></span>
       </button>`;
