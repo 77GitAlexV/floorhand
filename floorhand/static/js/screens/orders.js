@@ -2,6 +2,7 @@
 // attention block, the table with stage lines, and the order card (#/orders/<id>).
 import { registerScreen, addStrings, api, t, esc, name, state, money, fmtDate, fmtTime, flash, toast, go, idem } from "../core.js";
 import { icon, btn, chip, pill, table, stageLine, statusPill, dueText, empty, sectionTitle, stat, comingSoon, bindSoon } from "../ui.js";
+import * as OM from "../orders-more.js";
 
 addStrings({
   en: {
@@ -80,6 +81,7 @@ registerScreen({
           ${comingSoon(t("speak"), "mic")}
         </div>
         <div id="intakeOut"></div>
+        <div id="ordersExtras"></div>
       </section>
       ${r.attention.length ? `<h2 class="sec hot">${icon("alert")} ${t("attention")} <b>${r.attention.length}</b></h2>
         <ul class="attention">${r.attention.slice(0, ui.allLate ? 999 : 4).map(o => `<li><button type="button" data-order="${o.id}">
@@ -106,6 +108,11 @@ registerScreen({
         emptyText: t("nothingFound"),
       })}`;
     bindIntake(root, ctx);
+    OM.ordersExtras(root.querySelector("#ordersExtras"), ctx, p => {
+      ui.proposal = p; ui.picks = {};
+      renderProposal(root, ctx, p);
+      root.querySelector("#intakeOut").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     if (ui.proposal) renderProposal(root, ctx, ui.proposal);
     root.querySelectorAll("[data-order]").forEach(el => el.onclick = () => go("orders", { id: el.dataset.order }));
     root.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { ui.view = b.dataset.view; ctx.refresh(); });
@@ -166,15 +173,20 @@ function itemReady(item, picks) {
   });
 }
 
+const FIX_LIST = { product: "dl-products", customer: "dl-customers", variant: "dl-variants" };
+let datalistsHtml = "";
+OM.catalogLists().then(L => { datalistsHtml = OM.datalists(L); });
+
 function renderProposal(root, ctx, p) {
   const out = root.querySelector("#intakeOut");
   if (!out) return;
   const quotes = p.items.flatMap(i => FIELD_ORDER.map(k => i.fields[k].quote));
-  const open = p.items.map((item, idx) => ({ item, idx })).filter(x => !x.item.order_id);
+  const open = p.items.map((item, idx) => ({ item, idx })).filter(x => !x.item.order_id && !x.item.removed);
   const count = open.filter(x => itemReady(x.item, ui.picks[x.idx])).length;
   let toCheck = 0;
   const card = ({ item, idx }) => `<article class="rcard ${itemReady(item, ui.picks[idx]) ? "" : "needs"}">
-    <div class="r-top"><b>${t("orderN", { n: idx + 1 })}</b>${item.line ? `<i>${esc(item.line)}</i>` : ""}</div>
+    <div class="r-top"><b>${t("orderN", { n: idx + 1 })}</b>${item.line ? `<i>${esc(item.line)}</i>` : ""}
+      <button type="button" class="link bad" data-remove="${idx}">${t("oRemoveLine")}</button></div>
     <dl>${FIELD_ORDER.map(k => {
       const f = item.fields[k];
       const pick = (ui.picks[idx] || {})[k];
@@ -190,15 +202,21 @@ function renderProposal(root, ctx, p) {
       }
       return `<dt class="st-${unresolved ? "check" : f.status}">${t("f_" + k)}${unresolved ? ` · ${t("checkWord")}` : ""}</dt><dd>${val}
         ${f.quote ? `<small class="quote" data-quote="${esc(f.quote)}" title="${esc(f.quote)}">${icon("link")}<span>“${esc(f.quote)}”</span></small>` : ""}
-        ${unresolved && f.note ? `<small class="note">${esc(f.note)}</small>` : ""}</dd>`;
+        ${unresolved && f.note ? `<small class="note">${esc(f.note)}</small>` : ""}
+        <input class="input fixin" data-fidx="${idx}" data-ffield="${k}" ${FIX_LIST[k] ? `list="${FIX_LIST[k]}"` : ""}
+          ${k === "due_date" ? 'type="date"' : k === "qty" ? 'type="number" min="1" max="500"' : ""}
+          placeholder="${t("oFixHint")}" aria-label="${t("f_" + k)}">
+        <small class="fixmsg late" id="fm-${idx}-${k}"></small></dd>`;
     }).join("")}</dl></article>`;
   const cards = open.map(card).join("");
   out.innerHTML = `
     <div class="review">
-      <aside><h3><span>${t("source")}</span><span class="muted" style="text-transform:none;letter-spacing:0">${t("readBy")}: ${esc(p.model === "offline-rules" ? t("offlineRules") : p.model)}</span></h3><pre class="source" id="src">${markQuotes(p.source, quotes)}</pre></aside>
+      <aside><h3><span>${t("source")}</span><span class="muted" style="text-transform:none;letter-spacing:0">${t("readBy")}: ${esc(p.model === "offline-rules" ? t("offlineRules") : p.model)}</span></h3>${p.photo_id ? `<img class="iphoto" src="/api/orders/intake/photo/${p.photo_id}" alt="${t("photoBy")}">` : ""}
+        ${p.source ? `<pre class="source" id="src">${markQuotes(p.source, quotes)}</pre>` : ""}${p.note ? `<p class="late">${esc(p.note)}</p>` : ""}${datalistsHtml}</aside>
       <div><h3><span>${t("proposed")}</span><span>${open.length}</span></h3>${cards || empty(t("nothingToCreate"), "check")}
         <div class="review-foot">
           <span class="summary">${t("createN", { n: count }).replace(/^(\D*)/, "")} ${toCheck ? `· <span class="hot-ink">${t("toCheck", { n: toCheck })}</span>` : ""}</span>
+          ${btn({ label: t("oAddLine"), icon: "plus", kind: "secondary", attrs: 'id="intakeAdd"' })}
           ${btn({ label: t("dropProposal"), kind: "ghost", attrs: 'id="intakeDrop"' })}
           ${btn({ label: t("createN", { n: count }), icon: "check", kind: "primary", size: "lg", attrs: 'id="intakeApply"', disabled: !count })}
         </div>
@@ -217,11 +235,27 @@ function renderProposal(root, ctx, p) {
   // Click a quote on the right: light it up in the source on the left.
   out.querySelectorAll("[data-quote]").forEach(q => q.onclick = () => {
     const src = out.querySelector("#src");
+    if (!src) return;
     src.querySelectorAll("mark.on").forEach(m => m.classList.remove("on"));
     const m = [...src.querySelectorAll("mark")].find(x => x.textContent === q.dataset.quote);
     if (m) { m.classList.add("on"); m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
   });
   out.querySelector("#intakeDrop").onclick = () => { ui.proposal = null; out.innerHTML = ""; };
+  // Any field can be fixed by typing; the server checks it against the catalog.
+  const redraw = () => renderProposal(root, ctx, p);
+  out.querySelectorAll(".fixin").forEach(inp => {
+    const go_ = async () => {
+      if (inp.value === "") return;
+      const msg = out.querySelector(`#fm-${inp.dataset.fidx}-${inp.dataset.ffield}`);
+      if (await OM.fixField(p, inp.dataset.fidx, inp.dataset.ffield, inp.value, msg)) redraw();
+    };
+    inp.onkeydown = e => { if (e.key === "Enter") go_(); };
+    if (inp.type === "date") inp.onchange = go_;
+  });
+  if (out._fixed) out.removeEventListener("fixed", out._fixed);
+  out._fixed = redraw; out.addEventListener("fixed", redraw);
+  out.querySelectorAll("[data-remove]").forEach(b => b.onclick = async () => { if (await OM.removeLine(p, b.dataset.remove)) redraw(); });
+  out.querySelector("#intakeAdd").onclick = async () => { if (await OM.addLine(p)) redraw(); };
   out.querySelector("#intakeApply").onclick = async () => {
     const picks = {};
     for (const [idx, fields] of Object.entries(ui.picks)) {
@@ -253,7 +287,7 @@ async function renderOrder(root, ctx) {
     <header class="order-head">
       <div><h1>#${o.number} · ${esc(o.product)}${o.qty > 1 ? ` <span class="muted">× ${o.qty}</span>` : ""}</h1>
         <p class="facts">${esc(o.variant)}<br>${o.customer ? `${esc(o.customer)}, ${esc(o.city || "")} · ${t("due")} ${dueText(o)}` : t("toStock")}</p></div>
-      <div class="actions">${statusPill(o.status)}${main}<a class="btn ghost md" href="/paperwork/sheets/order/${o.id}?lang=${state.lang}" target="_blank" rel="noopener">${icon("paper")}<span>${t("orderSheet")}</span></a>${comingSoon(t("editOrder"), "edit")}</div>
+      <div class="actions">${statusPill(o.status)}${main}<a class="btn ghost md" href="/paperwork/sheets/order/${o.id}?lang=${state.lang}" target="_blank" rel="noopener">${icon("paper")}<span>${t("orderSheet")}</span></a>${btn({ label: t("editOrder"), icon: "edit", kind: "ghost", attrs: 'id="editOrder"' })}</div>
     </header>
     <div class="qtys">
       ${stat(t("ordered"), o.qty)}
@@ -265,6 +299,7 @@ async function renderOrder(root, ctx) {
       <span class="r-name">${s.state === "done" ? icon("check") : ""}${esc(name(s))}</span>
       <span class="r-n">${s.done}<span class="muted" style="font-size:.6em"> / ${o.qty}</span></span>
       <span class="r-who">${esc(s.people.join(", "))}</span></li>`).join("")}</ol>
+    <div id="orderMore" class="omore"></div>
     <div class="order-grid">
       <section>
         <h2 class="sec">${t("history")} <b>${o.history.length}</b></h2>
@@ -293,5 +328,8 @@ async function renderOrder(root, ctx) {
     if (!r.ok) { if (win) win.close(); return; }
     if (win) win.location = `${r.url}?lang=${state.lang}`;
   });
+  const more = root.querySelector("#orderMore");
+  root.querySelector("#editOrder").onclick = () => OM.openEdit(more);
+  OM.orderMore(more, o, ctx);
   bindSoon(root, toast);
 }

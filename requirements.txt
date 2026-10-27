@@ -4,3 +4,4 @@ tzdata
 pytest
 httpx
 segno
+openpyxl

@@ -80,3 +80,23 @@ def test_one_outbox_for_owner_cards_and_paperwork(conn):
     r = pw.send_outbox(conn, _manager(conn), purchase["id"])
     assert not r["ok"] and "No e-mail address" in r["message"]
     assert conn.execute("SELECT status FROM outbox WHERE id = ?", (purchase["id"],)).fetchone()[0] == "draft"
+
+
+@pytest.mark.parametrize("payer,keeps", [("shop", True), ("worker", False)])
+def test_rework_money_is_the_same_everywhere(conn, payer, keeps):
+    """A rework the shop pays for keeps the worker's pay in every money view (the
+    worker's today, the payroll answer in the Ask box); one the worker pays removes it."""
+    from floorhand.features import ask, orders
+    uid, worker = _waiting_at_first_stage(conn)
+    stage = conn.execute("SELECT stage_id FROM people WHERE id = ?", (worker,)).fetchone()[0]
+    if domain.rate(conn, uid, stage) is None:
+        pytest.skip("no rate for this piece")
+    mk.mark(conn, mk.Actor(worker), unit_id=uid, method="button")
+    before = mk._today_totals(conn, worker, True)["money"]
+    due_before = ask.t_payroll_due(conn)
+    orders.rework(conn, _manager(conn), [uid], stage, reason="seam", cause="sewing_error",
+                  payer=payer)
+    after = mk._today_totals(conn, worker, True)["money"]
+    home = domain.worker_home(conn, worker, show_money=True)["today"]["money"]
+    assert (after == before) is keeps and home == after
+    assert (ask.t_payroll_due(conn) == due_before) is keeps

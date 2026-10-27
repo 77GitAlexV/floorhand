@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 
 from .. import domain, models
-from ..domain import LIVE_DONE, DomainError
+from ..domain import LIVE_DONE, MONEY_DONE, DomainError
 from ..models import BudgetStop
 from . import materials, planner
 
@@ -82,7 +82,8 @@ def t_income(conn, month: str = "") -> dict:
 
 def _wages(conn, month: str) -> int:
     total = 0
-    for ev in conn.execute(f"SELECT unit_id, stage_id FROM ({LIVE_DONE}) WHERE substr(work_date, 1, 7) = ?",
+    # money follows MONEY_DONE: a rework the shop or customer pays for keeps the pay
+    for ev in conn.execute(f"SELECT unit_id, stage_id FROM ({MONEY_DONE}) WHERE substr(work_date, 1, 7) = ?",
                            (month,)):
         total += domain.rate(conn, ev["unit_id"], ev["stage_id"]) or 0
     return total
@@ -233,7 +234,7 @@ def t_payroll_due(conn) -> dict:
     cur = domain.currency(conn)
     by_person: dict[str, int] = {}
     pending = 0
-    for ev in conn.execute(f"SELECT e.unit_id, e.stage_id, p.name FROM ({LIVE_DONE}) e "
+    for ev in conn.execute(f"SELECT e.unit_id, e.stage_id, p.name FROM ({MONEY_DONE}) e "
                            "JOIN people p ON p.id = e.person_id "
                            "WHERE NOT EXISTS (SELECT 1 FROM payout_lines pl WHERE pl.event_id = e.id)"):
         amount = domain.rate(conn, ev["unit_id"], ev["stage_id"])

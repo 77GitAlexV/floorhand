@@ -42,7 +42,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from .. import domain, models, speech, web
-from ..domain import LIVE_DONE, DomainError
+from ..domain import LIVE_DONE, MONEY_DONE, DomainError
 from ..models import BudgetStop
 from ..web import Session, get_conn, office, worker
 
@@ -430,8 +430,11 @@ def _today_totals(conn, person_id: int, show_money: bool) -> dict:
     day = _now(conn).date().isoformat()
     rows = conn.execute(f"SELECT unit_id, stage_id FROM ({LIVE_DONE}) WHERE person_id = ? "
                         "AND work_date = ?", (person_id, day)).fetchall()
+    # Money as domain.worker_home counts it: a rework paid by the shop keeps the pay.
+    paid_rows = conn.execute(f"SELECT unit_id, stage_id FROM ({MONEY_DONE}) WHERE person_id = ? "
+                             "AND work_date = ?", (person_id, day)).fetchall()
     money, pending = 0, 0
-    for r in rows:
+    for r in paid_rows:
         a = domain.rate(conn, r["unit_id"], r["stage_id"])
         if a is None:
             pending += 1

@@ -15,6 +15,19 @@ LIVE_DONE = """
                       WHERE u.kind = 'undo' AND u.undoes_id = e.id)
 """
 
+# Work that earns money. A rework sends a unit back with 'undo' records, but
+# only the worker who made the mistake loses the pay ('rework:worker'); when
+# the shop or the customer pays, the original work stays paid and the redo is
+# paid again. Queues and progress still use LIVE_DONE.
+REWORK_KEEPS_PAY = ("rework:shop", "rework:customer")
+MONEY_DONE = """
+    SELECT e.* FROM work_events e
+    WHERE e.kind = 'done'
+      AND NOT EXISTS (SELECT 1 FROM work_events u
+                      WHERE u.kind = 'undo' AND u.undoes_id = e.id
+                        AND u.method NOT IN ('rework:shop', 'rework:customer'))
+"""
+
 
 class DomainError(Exception):
     """Refusal that is shown to the person as-is: what went wrong and what to do."""
@@ -299,17 +312,19 @@ def worker_home(conn: sqlite3.Connection, person_id: int, *, show_money: bool) -
         f"SELECT e.* FROM ({LIVE_DONE}) e WHERE e.person_id = ? AND e.work_date = ? "
         "ORDER BY e.id", (person_id, day)).fetchall()
     done_today = []
-    total = 0
-    pending = 0
     for ev in today_rows:
+        amount = rate(conn, ev["unit_id"], ev["stage_id"])
+        done_today.append({"event_id": ev["id"], "unit": unit_label(conn, ev["unit_id"]),
+                           "at": ev["created_at"][11:16],
+                           "amount": amount if show_money else None})
+    total = pending = 0
+    for ev in conn.execute(f"SELECT e.* FROM ({MONEY_DONE}) e WHERE e.person_id = ? "
+                           "AND e.work_date = ?", (person_id, day)):
         amount = rate(conn, ev["unit_id"], ev["stage_id"])
         if amount is None:
             pending += 1
         else:
             total += amount
-        done_today.append({"event_id": ev["id"], "unit": unit_label(conn, ev["unit_id"]),
-                           "at": ev["created_at"][11:16],
-                           "amount": amount if show_money else None})
 
     return {
         "person": {"id": who["id"], "name": who["name"], "lang": who["lang"]},
@@ -348,7 +363,7 @@ def earnings(conn: sqlite3.Connection, person_id: int, days: int = 7) -> dict:
     start = end - timedelta(days=days - 1)
     rows = conn.execute(
         f"SELECT e.*, (SELECT 1 FROM payout_lines pl WHERE pl.event_id = e.id) AS paid "
-        f"FROM ({LIVE_DONE}) e WHERE e.person_id = ?", (person_id,)).fetchall()
+        f"FROM ({MONEY_DONE}) e WHERE e.person_id = ?", (person_id,)).fetchall()
     by_day = {(start + timedelta(days=i)).isoformat(): {"count": 0, "money": 0}
               for i in range(days)}
     paid = unpaid = pending = 0
