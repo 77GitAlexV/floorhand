@@ -108,6 +108,7 @@ svg.ic { width: 1.25em; height: 1.25em; flex: none; vertical-align: -.25em; }
   -webkit-tap-highlight-color: transparent;
 }
 .btn:active { transform: translateY(1px); }
+a.btn { text-decoration: none; color: inherit; }
 .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 .btn.primary { background: var(--brand); color: var(--brand-ink); }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }

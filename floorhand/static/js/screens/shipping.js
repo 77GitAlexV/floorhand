@@ -11,6 +11,7 @@ addStrings({
     p_paid: "Paid in full", p_credit: "On account", p_partial: "Part paid", paidNow: "Paid now",
     shipAndPrint: "SHIP AND PRINT", scope: "Shipping {n} piece(s) to {c}.", pickItems: "Tick what goes.", pickPay: "Choose how it is paid.",
     noteN: "Note №{n}", invoice: "delivery note", conseq: "Paid now {paid}; on account after this: {owed}.",
+    paperworkLink: "Paperwork",
   },
   ru: {
     shipping: "Отгрузки", readyToShip: "Готово к отгрузке", nothingReady: "Пока ничего не готово.", readyOf: "{a} из {b} готово",
@@ -19,6 +20,7 @@ addStrings({
     p_paid: "Всё оплачено", p_credit: "В долг", p_partial: "Часть", paidNow: "Оплачено сейчас",
     shipAndPrint: "ОТГРУЗИТЬ И НАПЕЧАТАТЬ", scope: "Отгружаем {n} шт — {c}.", pickItems: "Отметь, что едет.", pickPay: "Выбери, как оплачено.",
     noteN: "Накладная №{n}", invoice: "накладная", conseq: "Оплачено сейчас {paid}; долг после отгрузки: {owed}.",
+    paperworkLink: "Документы",
   },
 });
 
@@ -30,7 +32,7 @@ registerScreen({
     const cur = b.currency;
     const sel = ctx.params.id ? Number(ctx.params.id) : null;
     root.innerHTML = `
-      <header class="head"><div><h1>${t("shipping")}</h1></div></header>
+      <header class="head"><div><h1>${t("shipping")}</h1></div><div class="actions"><a class="btn ghost md" href="/paperwork" target="_blank" rel="noopener">${icon("paper")}<span>${t("paperworkLink")}</span></a></div></header>
       <div class="ship ${sel ? "focus" : ""}">
         <aside class="ship-left">
           <h2 class="sec" style="margin-top:0">${t("readyToShip")} <b>${b.ready.length}</b></h2>
@@ -39,7 +41,7 @@ registerScreen({
             <span class="p-ready ${c.ready === c.open ? "all" : ""}">${t("readyOf", { a: c.ready, b: c.open })}</span></button></li>`).join("")
             || `<li>${empty(t("nothingReady"), "truck")}</li>`}</ul>
           <h2 class="sec">${t("shippedToday")} <b>${b.today.length}</b></h2>
-          <ul class="plain">${b.today.map(s => `<li><a href="/invoice/${s.id}" target="_blank">${icon("print")} ${t("noteN", { n: s.id })}</a><span>${esc(s.customer)} · <b>${money(cur, s.total)}</b></span></li>`).join("") || `<li class="muted">—</li>`}</ul>
+          <ul class="plain">${b.today.map(s => `<li><a href="/paperwork/note/${s.id}?lang=${state.lang}" target="_blank" rel="noopener">${icon("print")} ${t("noteN", { n: s.id })}</a><span>${esc(s.customer)} · <b>${money(cur, s.total)}</b></span></li>`).join("") || `<li class="muted">—</li>`}</ul>
           <h2 class="sec">${t("owedToUs")} <b>${b.debts.length}</b><span class="muted" style="margin-left:auto;text-transform:none;letter-spacing:0">${money(cur, b.owed_total)}</span></h2>
           <ul class="plain">${b.debts.slice(0, 6).map(d => `<li><span>${esc(d.name)}</span><b>${money(cur, d.owed)}</b></li>`).join("")}</ul>
         </aside>
@@ -105,7 +107,7 @@ async function renderPanel(root, ctx, customerId) {
     if (r.silent) { if (win) win.close(); return; }
     flash(r.ok, r.message);
     if (!r.ok) { if (win) win.close(); btnEl.disabled = false; return; }
-    if (win) win.location = `/invoice/${r.shipment_id}`;
+    if (win) win.location = `/paperwork/note/${r.shipment_id}?autoprint=1&lang=${state.lang}`;
     go("shipping");
   };
 }

@@ -7,4 +7,5 @@ import "./money.js";     // worker: my money
 import "./floor.js";     // owner: the floor as a pipeline
 import "./orders.js";    // office: orders, intake, order card
 import "./shipping.js";  // office: shipping in three taps
+import "./paperwork.js"; // office: order sheets, delivery notes, outbox
 import "./me.js";        // everyone: language, text size, theme, sign out

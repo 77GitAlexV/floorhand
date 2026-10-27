@@ -1,6 +1,6 @@
 // Office "Orders": intake box (paste anything -> proposal with quotes), the
 // attention block, the table with stage lines, and the order card (#/orders/<id>).
-import { registerScreen, addStrings, api, t, esc, name, state, money, fmtDate, fmtTime, flash, toast, go } from "../core.js";
+import { registerScreen, addStrings, api, t, esc, name, state, money, fmtDate, fmtTime, flash, toast, go, idem } from "../core.js";
 import { icon, btn, chip, pill, table, stageLine, statusPill, dueText, empty, sectionTitle, stat, comingSoon, bindSoon } from "../ui.js";
 
 addStrings({
@@ -14,7 +14,7 @@ addStrings({
     product: "Product", customer: "Customer", whereNow: "Where now", dueCol: "Due", nothingFound: "Nothing found.",
     v_open: "Open", v_in_work: "In work", v_ready: "Ready", v_shipped: "Shipped", v_all: "All",
     s_accepted: "Accepted", s_in_work: "In work", s_ready: "Ready", s_shipped: "Shipped", s_cancelled: "Cancelled",
-    ship: "Ship", printSheets: "Print job sheets", editOrder: "Edit", history: "History", undoneWord: "undone",
+    ship: "Ship", printSheets: "Print job sheets", editOrder: "Edit", orderSheet: "Order sheet", history: "History", undoneWord: "undone",
     ordered: "Ordered", inProd: "In production", readyQ: "Ready", shippedQ: "Shipped", spec: "Specification",
     commercial: "Customer & price", unitPrice: "Price / pc", created: "Created", sourceWord: "Source", noHistory: "No work recorded yet.",
     recordedAt: "{who} · {stage}{pc} · {t}", src_manual: "typed in", src_sheet: "table", src_email: "e-mail", src_chat: "chat", src_intake: "intake",
@@ -30,7 +30,7 @@ addStrings({
     product: "Изделие", customer: "Клиент", whereNow: "Где сейчас", dueCol: "Отдать к", nothingFound: "Ничего не найдено.",
     v_open: "Открытые", v_in_work: "В работе", v_ready: "Готовы", v_shipped: "Отгружены", v_all: "Все",
     s_accepted: "Принят", s_in_work: "В работе", s_ready: "Готов", s_shipped: "Отгружен", s_cancelled: "Отменён",
-    ship: "Отгрузить", printSheets: "Напечатать листки", editOrder: "Править", history: "История", undoneWord: "отменено",
+    ship: "Отгрузить", printSheets: "Напечатать листки", editOrder: "Править", orderSheet: "Лист заказа", history: "История", undoneWord: "отменено",
     ordered: "Заказано", inProd: "В работе", readyQ: "Готово", shippedQ: "Отгружено", spec: "Описание",
     commercial: "Клиент и цена", unitPrice: "Цена / шт", created: "Создан", sourceWord: "Откуда", noHistory: "Работа ещё не отмечалась.",
     recordedAt: "{who} · {stage}{pc} · {t}", src_manual: "вручную", src_sheet: "таблица", src_email: "письмо", src_chat: "чат", src_intake: "разбор",
@@ -247,13 +247,13 @@ async function renderOrder(root, ctx) {
   if (!o.ok) { if (!o.silent) root.innerHTML = empty(o.message, "alert"); return; }
   const main = o.status === "ready" && o.customer_id
     ? btn({ label: t("ship"), icon: "truck", kind: "primary", size: "lg", attrs: 'id="toShip"' })
-    : (o.status === "accepted" || o.status === "in_work") ? comingSoon(t("printSheets"), "print") : "";
+    : (o.status === "accepted" || o.status === "in_work") ? btn({ label: t("printSheets"), icon: "print", kind: "primary", attrs: 'id="printSheets"' }) : "";
   root.innerHTML = `
     ${btn({ label: t("orders"), icon: "back", kind: "ghost", attrs: 'id="back"' })}
     <header class="order-head">
       <div><h1>#${o.number} · ${esc(o.product)}${o.qty > 1 ? ` <span class="muted">× ${o.qty}</span>` : ""}</h1>
         <p class="facts">${esc(o.variant)}<br>${o.customer ? `${esc(o.customer)}, ${esc(o.city || "")} · ${t("due")} ${dueText(o)}` : t("toStock")}</p></div>
-      <div class="actions">${statusPill(o.status)}${main}${comingSoon(t("editOrder"), "edit")}</div>
+      <div class="actions">${statusPill(o.status)}${main}<a class="btn ghost md" href="/paperwork/sheets/order/${o.id}?lang=${state.lang}" target="_blank" rel="noopener">${icon("paper")}<span>${t("orderSheet")}</span></a>${comingSoon(t("editOrder"), "edit")}</div>
     </header>
     <div class="qtys">
       ${stat(t("ordered"), o.qty)}
@@ -283,5 +283,15 @@ async function renderOrder(root, ctx) {
     </div>`;
   root.querySelector("#back").onclick = () => go("orders");
   root.querySelector("#toShip")?.addEventListener("click", () => go("shipping", { id: o.customer_id }));
+  root.querySelector("#printSheets")?.addEventListener("click", async () => {
+    // A first print gets copy 1; a repeat is refused in words until a reason is chosen
+    // on the Paperwork page, so no second paper sheet appears by accident.
+    const win = window.open("", "_blank");
+    const r = await api("/api/paperwork/sheets/print", { scope: "orders", order_ids: [o.id], idem_key: idem() });
+    if (r.silent) { if (win) win.close(); return; }
+    flash(r.ok, r.message);
+    if (!r.ok) { if (win) win.close(); return; }
+    if (win) win.location = `${r.url}?lang=${state.lang}`;
+  });
   bindSoon(root, toast);
 }
