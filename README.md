@@ -34,6 +34,34 @@ So Floorhand is those few screens done well, plus an agent instead of everything
 The model never writes to the database: it proposes a card, a person presses **Yes**, and the
 server applies the stored proposal by id.
 
+## The owner's "Today" (the agentic part)
+
+Not a chat and not a bell: a feed of decisions, each one a stored proposal with a headline, the
+numbers, **Yes / Change / No** and a **Why?** whose every line is tagged FACT / CALC / ESTIMATE.
+Nothing is preselected.
+
+| Card | Computed from | Yes does |
+|---|---|---|
+| **Plan for tomorrow** | stage capacity per working day minus what is already on people's hands; late-risk first; a customer's order is never split between people; the bottleneck floats | creates the assignments (Change: untick lines, move a line to another offered person) |
+| **Not enough material** | bill of materials per product, fabric by the order's variant; stock = receipts minus consumption that *follows the work events* (an undo returns the fabric) | a purchase request in the outbox (dry run) |
+| **Late orders** | due date vs stages left vs working days | drafts notes to customers with the estimated new date (outbox, dry run) |
+| **Work for stock** | idle room at the first stage, fastest-selling products by shipments | creates orders for stock |
+
+The numbers are computed by `features/planner.py` and `features/materials.py`; Muse Spark only
+puts them into words ("Why?"). A new kind of advice first runs **in the shadow**: it is scored
+against what the floor actually did (`advice_scores`) and "Yes" switches on only after the hit
+rate is proven *and* the owner switches it on. The old ERP's day plan guessed ~10% right and was
+deleted; this one shows its own score on every card.
+
+**Ask box**: "how much did we earn in October?", "who owes us for more than 30 days?", "what is
+late and why?", "how much velvet beige do we need this week?" — answered by Muse Spark with
+function calling over read-only, role-cut tools (money is owner-only), or by the same tools
+through offline rules. Tools run with SQLite in `query_only` mode: a model cannot write even by
+accident.
+
+**Morning summary** per role (`/api/owner/morning`): one message of hard numbers for the owner,
+the manager and each worker — no phrases instead of figures.
+
 ## Rules the code keeps (each one has a test)
 
 - Work records are append-only (enforced by SQLite triggers). Undo is a visible record.

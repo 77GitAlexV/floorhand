@@ -341,6 +341,12 @@ def route_offline(conn: sqlite3.Connection, text: str) -> tuple[str, dict] | Non
         return "late_orders", {}
     mats = [r["name"] for r in conn.execute("SELECT name FROM materials")]
     hit = next((n for n in sorted(mats, key=len, reverse=True) if n.lower() in t), None)
+    if hit is None:  # the demo names materials in English; let Russian words find them
+        words = {w for w in re.findall(r"[a-zа-яё]+", t)}
+        stems = {en for ru, en in RU_WORDS.items() if any(w.startswith(ru) for w in words)}
+        scored = sorted(((sum(1 for s in stems if s in n.lower()), n) for n in mats), reverse=True)
+        if scored and scored[0][0] >= 2:
+            hit = scored[0][1]
     if hit:
         return "material_need", {"name": hit, "days": 5}
     if re.search(r"short|run out|нехват|кончает|закончил|не хватает", t):
@@ -353,6 +359,11 @@ def route_offline(conn: sqlite3.Connection, text: str) -> tuple[str, dict] | Non
         return "floor_now", {}
     return None
 
+
+RU_WORDS = {"велюр": "velvet", "букле": "boucle", "лён": "linen", "лен": "linen", "шенилл": "chenille",
+            "беж": "beige", "графит": "graphite", "молоч": "milk", "песоч": "sand", "песок": "sand",
+            "изумруд": "emerald", "сер": "grey", "пепел": "ash", "поролон": "foam", "каркас": "frame",
+            "ножк": "legs", "молни": "zip", "скоб": "staples", "пуф": "pouf", "стул": "chair", "диван": "sofa"}
 
 EXAMPLES = [
     tt("how much did we earn in October?", "сколько заработали в октябре?"),

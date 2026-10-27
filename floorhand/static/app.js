@@ -79,13 +79,20 @@ async function render() {
   const worker = state.me.stage_id !== null;
   const tabs = worker
     ? (state.me.tablet ? ["work"] : ["work", "money", "me"])
-    : state.me.role === "owner" ? ["floor", "orders", "shipping", "me"]
-      : ["orders", "shipping", "me"];
+    : state.me.role === "owner" ? ["today", "floor", "orders", "shipping", "stock", "me"]
+      : ["orders", "shipping", "stock", "me"];
   if (!tabs.includes(state.tab)) state.tab = tabs[0];
   document.body.classList.toggle("office", !worker);
   renderTabs(tabs);
   ({ work: renderWork, money: renderMoney, me: renderMe, floor: renderFloor,
-     orders: renderOrders, shipping: renderShipping })[state.tab]();
+     orders: renderOrders, shipping: renderShipping, today: renderToday,
+     stock: renderStock })[state.tab]();
+}
+
+// Server texts come in both languages: {en, ru}.
+function tl(obj) { return obj && typeof obj === "object" ? (obj[state.lang] || obj.en || "") : (obj ?? ""); }
+function fmt(key, vars) {
+  return Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(v), t(key));
 }
 
 function renderTabs(tabs) {
@@ -535,6 +542,246 @@ async function renderShipPanel(customerId) {
     if (win) win.location = `/invoice/${r.shipment_id}`;
     renderShipping();
   };
+}
+
+// --- owner: Today ----------------------------------------------------------
+// A feed of decisions. Every card is a stored proposal; the buttons send only
+// its id (plus what was kept or picked from what was offered). Nothing is
+// preselected; "Why?" shows the numbers tagged FACT / CALC / ESTIMATE.
+
+function tag(kind) { return `<i class="tag ${kind.toLowerCase()}">${kind}</i>`; }
+
+async function renderToday() {
+  const [f, m] = await Promise.all([api("/api/owner/today"), api(`/api/owner/morning?lang=${state.lang}`)]);
+  if (!f.ok) { if (!f.silent) flash(false, f.message); return; }
+  const s = f.summary;
+  const bn = s.bottleneck;
+  $app.innerHTML = `
+    <header class="bar"><h1>${t("today")}</h1><span class="date">${esc(f.date)}</span>${langSwitch()}</header>
+    <ul class="kpis">
+      <li><b>${s.open_orders}</b><span>${t("openOrders")}</span></li>
+      <li><b>${s.ready}</b><span>${t("readyShip")}</span></li>
+      <li class="${s.late ? "hot" : ""}"><b>${s.late}</b><span>${t("lateOrders")}</span></li>
+      <li class="${s.shortages ? "hot" : ""}"><b>${s.shortages}</b><span>${t("shortMat")}</span></li>
+      <li><b>${s.done_today}<small>/${s.capacity}</small></b><span>${t("doneCap")}</span></li>
+      <li class="${bn ? "hot" : ""}"><b>${bn ? esc(stageName(bn)) : "—"}</b>
+        <span>${bn ? `${t("bottleneckIs")} · ${bn.queue} / ${bn.capacity}` : t("noBottleneck")}</span></li>
+    </ul>
+    ${m.ok ? `<details class="morning"><summary>${t("morning")} · ${esc(m.head)}</summary>
+      <ul class="plain">${m.lines.map(l => `<li>${esc(l)}</li>`).join("")}</ul></details>` : ""}
+    <h2>${t("decisions")} · ${f.cards.length}</h2>
+    <div id="cards">${f.cards.length ? f.cards.map(decisionCard).join("") : `<p class="empty">${t("noDecisions")}</p>`}</div>
+    ${f.outbox ? `<p class="muted">${fmt("outboxN", { n: f.outbox })}</p>` : ""}
+    <h2>${t("ask")}</h2>
+    <section class="askbox">
+      <div class="row"><input id="askText" type="text" placeholder="${t("askHint")}" value="${esc(state.askText || "")}">
+        <button type="button" class="mid" id="askGo">${t("ask")}</button></div>
+      <p class="muted">${t("tryAsk")} ${f.examples.map(e => `<button type="button" class="chip" data-ask="${esc(tl(e))}">${esc(tl(e))}</button>`).join(" ")}</p>
+      <div id="askOut"></div>
+    </section>
+    ${f.decided.length ? `<h2>${t("decidedToday")} · ${f.decided.length}</h2>
+      <ul class="plain decided">${f.decided.map(c => `<li><b class="st-${c.status}">${t("s_" + c.status)}</b> ${esc(tl(c.headline))}
+        ${c.result && c.result.reason ? `<small class="muted">— ${esc(c.result.reason)}</small>` : ""}</li>`).join("")}</ul>` : ""}`;
+  bindLang();
+  bindCards(f);
+  bindAsk();
+}
+
+function kindStats(c) {
+  const st = c.stats;
+  if (c.shadow) {
+    return `<span class="shadow">${t("shadow")} · ${st.ready
+      ? fmt("shadowReady", { rate: Math.round(st.rate * 100), n: st.scored })
+      : fmt("shadowHint", { hits: st.hits, total: st.total, n: st.min_scored, rate: Math.round(st.min_rate * 100) })}</span>
+      ${st.ready ? `<button type="button" class="chip" data-enable="${c.kind}">${t("switchOn")}</button>` : ""}`;
+  }
+  const parts = [`${st.accepted} ${t("accepted")}`, `${st.rejected} ${t("rejectedW")}`];
+  if (st.rate !== null) parts.push(`${Math.round(st.rate * 100)}% ${t("followed")}`);
+  return `<span class="muted">${parts.join(" · ")}</span>`;
+}
+
+function decisionCard(c) {
+  return `<article class="card decision k-${c.kind} ${c.shadow ? "shadowed" : ""}" data-card="${c.id}">
+    <div class="kind">${t("k_" + c.kind)} · ${t("forDay")} ${esc(c.target_date)} ${kindStats(c)}</div>
+    <h3>${esc(tl(c.headline))}</h3>
+    <ul class="nums">${c.numbers.map(n => `<li><b>${esc(tl(n.value))}</b><span>${esc(tl(n.label))} ${tag(n.tag)}</span></li>`).join("")}</ul>
+    <div class="actions">
+      <button type="button" class="mid" data-yes="${c.id}" ${c.shadow ? "disabled" : ""}>${esc(tl(c.apply_label) || t("yes"))}</button>
+      <button type="button" class="mid alt" data-change="${c.id}" ${c.shadow ? "disabled" : ""}>${t("change")}</button>
+      <button type="button" class="mid alt" data-no="${c.id}">${t("no")}</button>
+      <button type="button" class="mid alt" data-why="${c.id}">${t("why")}</button>
+    </div>
+    <div class="why" hidden></div>
+    <div class="change" hidden></div>
+    <div class="noform" hidden>
+      <input type="text" placeholder="${t("reasonHint")}" data-reason="${c.id}">
+      <div class="row"><button type="button" class="mid alt" data-noyes="${c.id}">${t("recordNo")}</button>
+        <button type="button" class="mid alt" data-cancel="${c.id}">${t("cancel")}</button></div>
+    </div>
+  </article>`;
+}
+
+function changeForm(c) {
+  if (c.kind === "plan") {
+    const byStage = {};
+    c.lines.forEach(l => (byStage[l.stage_id] = byStage[l.stage_id] || []).push(l));
+    const stage = id => c.stages.find(s => s.stage_id === id);
+    return Object.entries(byStage).map(([sid, lines]) => `<h4>${esc(stageName(stage(Number(sid))))} · ${lines.length}</h4>
+      <ul class="lines">${lines.map(l => `<li class="${l.risk !== "ok" ? "risky" : ""}">
+        <label><input type="checkbox" checked data-keep="${l.unit_id}"> <span><b>${esc(l.label)}</b> ${esc(l.product)}
+          <small>${esc(l.variant)} · ${l.customer ? esc(l.customer) + " · " + esc(l.due || "") : t("toStock")}${l.late_days ? ` · <span class="late">${t("lateBy")} ${l.late_days} ${t("days")}</span>` : ""}</small></span></label>
+        <select data-move="${l.unit_id}">${stage(Number(sid)).workers.map(p =>
+          `<option value="${p.id}" ${p.id === l.person_id ? "selected" : ""}>${esc(p.name)} · ${p.on_hands} ${t("onHands")}</option>`).join("")}</select>
+      </li>`).join("")}</ul>`).join("");
+  }
+  if (c.kind === "shortage") {
+    return `<ul class="lines">${c.options.map((o, i) => `<li><label><input type="radio" name="pick-${c.id}" value="${o.id}" ${i === 0 ? "checked" : ""}> <span>${esc(tl(o.label))}</span></label></li>`).join("")}</ul>
+      <p class="muted">${c.lines.map(l => `#${l.order} ${l.qty}`).join(" · ")}</p>`;
+  }
+  if (c.kind === "late_risk") {
+    return `<ul class="lines">${c.lines.map(o => `<li class="${o.risk === "late" ? "risky" : ""}"><label>
+      <input type="checkbox" checked data-keep="${o.number}" ${o.customer ? "" : "disabled"}> <span><b>#${o.number}</b> ${esc(o.product)}
+      <small>${esc(o.customer || t("toStock"))} · ${t("due")} ${esc(o.due)} → ${esc(o.estimate)} ${tag("ESTIMATE")}${o.late_days ? ` · <span class="late">${t("lateBy")} ${o.late_days} ${t("days")}</span>` : ""}</small></span></label></li>`).join("")}</ul>`;
+  }
+  return `<ul class="lines">${c.lines.map(l => `<li><label><input type="checkbox" checked data-keep="${l.product_id}"> <span><b>${esc(l.product)}</b> × ${l.qty}
+    <small>${l.sold_30d} / 30 d · ${l.cover_days ?? "—"} d</small></span></label></li>`).join("")}</ul>`;
+}
+
+function bindCards(f) {
+  const byId = Object.fromEntries(f.cards.map(c => [c.id, c]));
+  const box = id => $app.querySelector(`[data-card="${id}"]`);
+  const decide = async (id, body) => {
+    const r = await api(`/api/owner/cards/${id}/apply`, body);
+    if (!r.silent) flash(r.ok, r.message);
+    if (r.ok) renderToday();
+  };
+  $app.querySelectorAll("[data-yes]").forEach(b => b.onclick = () => { b.disabled = true; decide(Number(b.dataset.yes), {}); });
+  $app.querySelectorAll("[data-change]").forEach(b => b.onclick = () => {
+    const c = byId[Number(b.dataset.change)];
+    const el = box(c.id).querySelector(".change");
+    el.hidden = !el.hidden;
+    if (el.hidden) return;
+    el.innerHTML = changeForm(c) + `<div class="row"><button type="button" class="mid" data-apply="${c.id}">${t("applyChanges")}</button>
+      <button type="button" class="mid alt" data-cancel="${c.id}">${t("cancel")}</button></div>`;
+    el.querySelector("[data-apply]").onclick = () => {
+      const body = {};
+      if (el.querySelector("[data-keep]")) body.keep = [...el.querySelectorAll("[data-keep]:checked")].map(x => Number(x.dataset.keep));
+      const moves = {};
+      el.querySelectorAll("[data-move]").forEach(sel => { moves[sel.dataset.move] = Number(sel.value); });
+      if (Object.keys(moves).length) body.moves = moves;
+      const pick = el.querySelector("input[type=radio]:checked");
+      if (pick) body.pick = Number(pick.value);
+      decide(c.id, body);
+    };
+    el.querySelector("[data-cancel]").onclick = () => { el.hidden = true; };
+  });
+  $app.querySelectorAll("[data-no]").forEach(b => b.onclick = () => {
+    const el = box(Number(b.dataset.no)).querySelector(".noform");
+    el.hidden = !el.hidden;
+    if (!el.hidden) el.querySelector("input").focus();
+  });
+  $app.querySelectorAll("[data-noyes]").forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.noyes);
+    const r = await api(`/api/owner/cards/${id}/reject`, { reason: box(id).querySelector("[data-reason]").value });
+    if (!r.silent) flash(r.ok, r.message);
+    if (r.ok) renderToday();
+  });
+  $app.querySelectorAll(".noform [data-cancel]").forEach(b => b.onclick = () => {
+    box(Number(b.dataset.cancel)).querySelector(".noform").hidden = true;
+  });
+  $app.querySelectorAll("[data-why]").forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.why);
+    const el = box(id).querySelector(".why");
+    if (!el.hidden) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `<p class="muted">…</p>`;
+    const r = await api(`/api/owner/cards/${id}/why?lang=${state.lang}`);
+    if (!r.ok) { el.innerHTML = `<p class="late">${esc(r.message)}</p>`; return; }
+    el.innerHTML = `<p>${esc(r.text)}</p><ul class="facts">${r.lines.map(l => `<li>${tag(l.tag)} ${esc(tl(l))}</li>`).join("")}</ul>
+      <p class="muted">${t("computedBy")} planner-rules · ${t("explainedBy")} ${esc(r.model)}</p>`;
+  });
+  $app.querySelectorAll("[data-enable]").forEach(b => b.onclick = async () => {
+    const r = await api(`/api/owner/advice/${b.dataset.enable}/enable`, {});
+    if (!r.silent) flash(r.ok, r.message);
+    if (r.ok) renderToday();
+  });
+}
+
+function bindAsk() {
+  const input = document.getElementById("askText");
+  const out = document.getElementById("askOut");
+  const go = async text => {
+    if (!text.trim()) return;
+    state.askText = text;
+    const btn = document.getElementById("askGo");
+    btn.disabled = true; btn.textContent = t("asking");
+    const r = await api("/api/owner/ask", { text, lang: state.lang });
+    btn.disabled = false; btn.textContent = t("ask");
+    if (!r.ok) { if (!r.silent) flash(false, r.message); return; }
+    out.innerHTML = `<div class="answer">
+      ${r.answer ? `<p>${esc(r.answer)}</p>` : ""}
+      ${r.lines.length ? `<ul class="facts">${r.lines.map(l => `<li>${tag(l.tag)} ${esc(tl(l))}</li>`).join("")}</ul>` : ""}
+      ${r.examples ? `<p>${r.examples.map(e => `<button type="button" class="chip" data-ask="${esc(tl(e))}">${esc(tl(e))}</button>`).join(" ")}</p>` : ""}
+      <p class="muted">${t("answeredBy")} ${esc(r.model)}${r.tools.length ? ` · ${r.tools.join(", ")}` : ""}</p></div>`;
+    out.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { input.value = b.dataset.ask; go(b.dataset.ask); });
+  };
+  document.getElementById("askGo").onclick = () => go(input.value);
+  input.onkeydown = e => { if (e.key === "Enter") go(input.value); };
+  $app.querySelectorAll(".askbox [data-ask]").forEach(b => b.onclick = () => { input.value = b.dataset.ask; go(b.dataset.ask); });
+}
+
+// --- office: Stock (materials) --------------------------------------------
+
+async function renderStock() {
+  const r = await api("/api/materials");
+  if (!r.ok) { if (!r.silent) flash(false, r.message); return; }
+  const kinds = ["fabric", "foam", "frame", "fittings", "other"];
+  const stops = new Set(r.shortages.filter(s => s.stops_next).map(s => s.material_id));
+  const row = m => `<tr data-mat="${m.id}" class="${m.short ? "short" : ""}">
+    <td><b>${esc(m.name)}</b><br><small>${t("m_" + m.kind)}${m.supplier ? " · " + esc(m.supplier) : ""}</small></td>
+    <td class="n">${m.on_hand} ${esc(m.unit)}${m.low ? `<br><small class="late">${t("low")}</small>` : ""}</td>
+    <td class="n">${m.need} ${esc(m.unit)}</td>
+    <td class="n">${m.short ? `<b class="late">${m.short} ${esc(m.unit)}</b>` : "—"}
+      ${stops.has(m.id) ? `<br><small class="late">${t("nextMarks")}</small>` : ""}</td></tr>`;
+  $app.innerHTML = `
+    <header class="bar"><h1>${t("stock")}</h1>${langSwitch()}</header>
+    <div class="split stock">
+      <div>
+        <table class="orders mats"><thead><tr><th>${t("material")}</th><th class="n">${t("onHand")}</th>
+          <th class="n">${t("need")}</th><th class="n">${t("short")}</th></tr></thead>
+          <tbody>${kinds.flatMap(k => r.materials.filter(m => m.kind === k)).map(row).join("")}</tbody></table>
+      </div>
+      <aside>
+        <section class="panel">
+          <h2>${t("receive")}</h2>
+          <select id="recMat">${r.materials.map(m => `<option value="${m.id}">${esc(m.name)} (${esc(m.unit)})</option>`).join("")}</select>
+          <input id="recQty" type="number" step="0.1" min="0" inputmode="decimal" placeholder="${t("qty")}">
+          <input id="recNote" type="text" placeholder="${t("note")}">
+          <button type="button" class="big" id="recGo">${t("recordIt")}</button>
+        </section>
+        <section class="panel" id="journal" hidden></section>
+      </aside>
+    </div>`;
+  bindLang();
+  document.getElementById("recGo").onclick = async () => {
+    const res = await api("/api/materials/receive", {
+      material_id: Number(document.getElementById("recMat").value),
+      qty: Number(document.getElementById("recQty").value), note: document.getElementById("recNote").value,
+    });
+    if (!res.silent) flash(res.ok, res.message);
+    if (res.ok) renderStock();
+  };
+  $app.querySelectorAll("[data-mat]").forEach(tr => tr.onclick = async () => {
+    const j = await api(`/api/materials/${tr.dataset.mat}/journal`);
+    if (!j.ok) return;
+    const el = document.getElementById("journal");
+    el.hidden = false;
+    el.innerHTML = `<h2>${t("journal")} · ${esc(tr.querySelector("b").textContent)}</h2>
+      <ul class="plain journal">${j.rows.map(x => `<li><span>${esc(x.at.replace("T", " ").slice(0, 16))}</span>
+        <span>${t("j_" + x.kind)}${x.unit ? " " + esc(x.unit) : ""}${x.note ? ` · ${esc(x.note)}` : ""}</span>
+        <b class="${x.qty < 0 ? "late" : ""}">${x.qty > 0 ? "+" : ""}${Math.round(x.qty * 100) / 100}</b></li>`).join("")}</ul>`;
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
 }
 
 async function signOut() {
