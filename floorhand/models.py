@@ -11,11 +11,16 @@ FLOORHAND_BUDGET_USD (default 120 of the 150 hackathon credits; the rest is a
 margin for billing that shows up late).
 """
 import json
+import math
 import os
+import random
 import sqlite3
+import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 API = "https://api.meta.ai/v1"
 
@@ -36,7 +41,7 @@ SPARK = os.environ.get("FLOORHAND_SPARK_MODEL", "muse-spark-1.3-contributor")
 
 
 class BudgetStop(Exception):
-    """No paid call: not live, no key, or the budget would be crossed."""
+    """Use offline: disabled, out of budget, or no usable model result."""
 
 
 def live() -> bool:
@@ -64,10 +69,12 @@ def unit_cost_micro(model: str, units: float) -> int:
 
 
 def check(conn: sqlite3.Connection, worst_case_micro: int) -> None:
+    if worst_case_micro < 0:
+        raise ValueError("Negative model cost")
     if not live():
-        raise BudgetStop("Meta API is off (FLOORHAND_META_LIVE / MODEL_API_KEY not set).")
+        raise BudgetStop("Meta API is off; use the offline path. / Meta API выключен; используйте офлайн-режим.")
     if spent_micro(conn) + worst_case_micro > budget_micro():
-        raise BudgetStop("Model budget reached; using the offline path.")
+        raise BudgetStop("Model budget reached; use the offline path. / Бюджет исчерпан; используйте офлайн-режим.")
 
 
 def _log(conn, model, purpose, *, input_tokens=0, cached_tokens=0, output_tokens=0,
@@ -85,92 +92,213 @@ def _post(path: str, body: dict, timeout: int = 120) -> dict:
     req = urllib.request.Request(
         API + path, data=json.dumps(body).encode(), method="POST",
         headers={"Authorization": "Bearer " + os.environ["MODEL_API_KEY"],
-                 "Content-Type": "application/json"})
+                 "Content-Type": "application/json",
+                 "Accept": "text/event-stream" if body.get("stream") else "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        if body.get("stream"):
+            return _read_stream(res)
+        return json.load(res)
+
+
+def _read_stream(res) -> dict:
+    """Never accept a truncated SAM stream as a successful empty result."""
+    parts, lines = [], []
+    for raw in res:
+        line = raw.decode("utf-8").rstrip("\r\n")
+        if line:
+            if line.startswith("data:"):
+                lines.append(line[5:].lstrip(" "))
+            continue
+        if not lines:
+            continue
+        event = json.loads("\n".join(lines))
+        lines = []
+        kind = event.get("type")
+        if kind == "response.output_text.delta":
+            parts.append(event["delta"])
+        elif kind == "response.completed":
+            data = event["response"]
+            data["output_text"] = "".join(parts)
+            return data
+        elif kind in ("error", "response.failed", "response.incomplete"):
+            code = event.get("code")
+            # The documented transient terminal errors can retry the whole call.
+            status = 503 if code in ("server_shutting_down", "service_overloaded",
+                                     "backend_unavailable") else 400
+            raise urllib.error.HTTPError(API, status, "Stream failed", {}, None)
+    raise ValueError("Incomplete response stream")
+
+
+def _post_multipart(path: str, fields: dict, files: dict, timeout: int = 120) -> dict:
+    """Encode binary uploads without an SDK or extra dependencies."""
+    boundary = "floorhand-" + uuid.uuid4().hex
+    parts = []
+    for name, value in fields.items():
+        is_json = isinstance(value, dict)
+        parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n'
+                      + ("Content-Type: application/json\r\n" if is_json else "")
+                      + "\r\n").encode())
+        parts.append((json.dumps(value) if is_json else str(value)).encode("utf-8") + b"\r\n")
+    for name, (filename, content, mime) in files.items():
+        if any(c in name + filename + mime for c in '\r\n"'):
+            raise ValueError("Invalid multipart header")
+        parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+                      f'filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n').encode())
+        parts.append(content + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    req = urllib.request.Request(API + path, data=b"".join(parts), method="POST", headers={
+        "Authorization": "Bearer " + os.environ["MODEL_API_KEY"],
+        "Content-Type": "multipart/form-data; boundary=" + boundary,
+        "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as res:
         return json.load(res)
+
+
+def _reserve(conn, model, purpose, worst, units=0):
+    """Reserve before I/O so overlapping requests cannot spend the same balance."""
+    check(conn, worst)
+    cur = conn.execute(
+        "INSERT INTO model_calls (at, model, purpose, cost_micro, units, estimated, ok) "
+        "SELECT ?,?,?,?,?,1,0 WHERE "
+        "(SELECT COALESCE(SUM(cost_micro),0) FROM model_calls) + ? <= ?",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), model, purpose,
+         worst, units, worst, budget_micro()))
+    conn.commit()
+    if not cur.rowcount:
+        raise BudgetStop("Model budget reached; use offline. / Бюджет исчерпан; используйте офлайн-режим.")
+    return cur.lastrowid
+
+
+def _settle(conn, call_id, *, cost_micro, estimated, ok, input_tokens=0,
+            output_tokens=0, cached_tokens=0, units=0):
+    conn.execute("UPDATE model_calls SET cost_micro=?, estimated=?, ok=?, input_tokens=?, "
+                 "output_tokens=?, cached_tokens=?, units=? WHERE id=?",
+                 (cost_micro, int(estimated), int(ok), input_tokens, output_tokens,
+                  cached_tokens, units, call_id))
+    conn.commit()
+
+
+def _retry_delay(exc, attempt):
+    value = exc.headers.get("Retry-After") if exc.headers else None
+    if value:
+        try:
+            seconds = float(value)
+        except ValueError:
+            try:
+                seconds = (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                seconds = 0
+        if math.isfinite(seconds) and seconds > 0:
+            return seconds
+    return 2 ** attempt + random.random()
+
+
+def _request(conn, purpose, model, worst, send, account, units=0):
+    for attempt in range(3):
+        call_id = _reserve(conn, model, purpose, worst, units)
+        try:
+            data = send()
+        except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
+            # Leave the reservation charged: a failed/ambiguous attempt may be billed.
+            if (isinstance(exc, urllib.error.HTTPError) and attempt < 2
+                    and (exc.code == 429 or 500 <= exc.code < 600) and exc.code != 504):
+                check(conn, worst)
+                time.sleep(_retry_delay(exc, attempt))
+                continue
+            raise BudgetStop("Meta request failed; use offline. / Запрос Meta не выполнен; "
+                             "используйте офлайн-режим.") from exc
+        try:
+            if not isinstance(data, dict) or data.get("error"):
+                raise ValueError("Invalid response")
+            values = account(data)
+        except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
+            values = {"cost_micro": worst, "estimated": True, "units": units}
+        ok = isinstance(data, dict) and not data.get("error") and data.get("status") not in (
+            "failed", "incomplete", "cancelled", "queued", "in_progress")
+        _settle(conn, call_id, ok=ok, **values)
+        if not ok:
+            raise BudgetStop("Meta returned no complete result; use offline. / Нет полного ответа Meta; "
+                             "используйте офлайн-режим.")
+        return data
+
+
+def _token_usage(data, model, worst):
+    usage = data.get("usage") or {}
+    inp = usage.get("input_tokens", usage.get("prompt_tokens"))
+    out = usage.get("output_tokens", usage.get("completion_tokens"))
+    details = usage.get("input_tokens_details", usage.get("prompt_tokens_details")) or {}
+    cached = details.get("cached_tokens", 0)
+    if any(type(n) is not int or n < 0 for n in (inp, out, cached)) or cached > inp:
+        raise ValueError("Invalid usage")
+    return dict(input_tokens=inp, output_tokens=out, cached_tokens=cached,
+                cost_micro=token_cost_micro(model, inp, out, cached), estimated=False)
 
 
 def respond(conn: sqlite3.Connection, purpose: str, input_: list | str, *,
             model: str = SPARK, max_output_tokens: int = 2000,
             est_input_tokens: int | None = None, **extra) -> dict:
     """POST /v1/responses under the budget. Returns the raw response JSON."""
-    # Worst case: 1 token per 2 chars plus 1,000 for framing, and all of
-    # max_output_tokens used. Real usage is usually far below this.
-    est_in = est_input_tokens if est_input_tokens is not None else \
-        len(json.dumps(input_, ensure_ascii=False)) // 2 + 1000
-    worst = token_cost_micro(model, est_in, max_output_tokens)
-    check(conn, worst)
+    # Keep the legacy hint argument; reservations use the full request below.
     body = {"model": model, "input": input_, "max_output_tokens": max_output_tokens, **extra}
-    try:
-        data = _post("/responses", body)
-    except (urllib.error.URLError, TimeoutError) as exc:
-        # The request may still have been billed: charge the worst case.
-        _log(conn, model, purpose, cost_micro=worst, estimated=True, ok=False)
-        raise BudgetStop(f"Meta API call failed: {exc}") from exc
-    usage = data.get("usage") or {}
-    inp = usage.get("input_tokens", usage.get("prompt_tokens"))
-    out = usage.get("output_tokens", usage.get("completion_tokens"))
-    cached = (usage.get("input_tokens_details") or {}).get("cached_tokens", 0)
-    if inp is None or out is None:
-        _log(conn, model, purpose, cost_micro=worst, estimated=True, ok=True)
-    else:
-        _log(conn, model, purpose, input_tokens=inp, cached_tokens=cached, output_tokens=out,
-             cost_micro=token_cost_micro(model, inp, out, cached), estimated=False, ok=True)
-    return data
+    if model not in TOKEN_PRICES:
+        raise BudgetStop("Unknown model price; use offline. / Цена модели неизвестна; используйте офлайн-режим.")
+    if type(max_output_tokens) is not int or not 16 <= max_output_tokens <= 131072:
+        raise ValueError("max_output_tokens must be between 16 and 131072")
+    if extra.get("tools") and any(t.get("type") != "function" for t in extra["tools"]):
+        raise ValueError("Only local function tools have budgeted pricing")
+    if extra.get("previous_response_id") or extra.get("conversation"):
+        raise ValueError("Replay input explicitly so the budget can account for it")
+    encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    # Include schemas, tools, instructions and replay, not just the user prompt.
+    # Images/files and encrypted reasoning are opaque: reserve the entire input window.
+    opaque = any(s in encoded for s in (b'"input_image"', b'"input_file"',
+                                        b'"input_video"', b'"encrypted_content"'))
+    est_in = 1048576 - max_output_tokens if opaque else len(encoded) + 1000
+    if est_in + max_output_tokens > 1048576:
+        raise BudgetStop("Input is too large; split it. / Запрос слишком большой; разделите его.")
+    worst = token_cost_micro(model, est_in, max_output_tokens)
+    return _request(conn, purpose, model, worst, lambda: _post("/responses", body),
+                    lambda data: _token_usage(data, model, worst))
 
 
-VOICE = "muse-voice-transcribe-1.0"
-VOICE_MAX_SECONDS = 60
+def request_units(conn, purpose, model, units, path, *, body=None, fields=None, files=None,
+                  usage_units=None):
+    """Budget per-image/per-second endpoints through the same attempt ledger."""
+    if model not in UNIT_PRICES or not math.isfinite(units) or units < 0:
+        raise ValueError("Invalid unit pricing")
+    worst = unit_cost_micro(model, units)
+
+    def account(data):
+        actual = usage_units(data) if usage_units else None
+        estimated = actual is None
+        actual = units if estimated else actual
+        if not math.isfinite(actual) or actual < 0:
+            raise ValueError("Invalid units")
+        return dict(units=actual, cost_micro=unit_cost_micro(model, actual), estimated=estimated)
+
+    send = (lambda: _post(path, body)) if body is not None else (
+        lambda: _post_multipart(path, fields or {}, files or {}))
+    return _request(conn, purpose, model, worst, send, account, units)
 
 
 def transcribe(conn: sqlite3.Connection, purpose: str, audio: bytes, mime: str, *,
                language: str | None = None) -> str:
-    """Speech to text with Muse Voice Transcribe under the budget.
+    """Keep marking on the shared, reserved-budget voice client."""
+    from .meta import voice
 
-    Billed per audio second. We do not decode audio here, so the worst case is the
-    longest clip we accept (VOICE_MAX_SECONDS); a worker's phrase is 2-5 seconds.
-    Request shape follows the dev.meta.ai docs as read on 27.10.2026 (an
-    /audio/transcriptions call with base64 audio); check it before the first live call.
-    """
-    import base64
     if len(audio) > 2_000_000:
-        raise BudgetStop("Recording is too long; keep it under a minute.")
-    worst = unit_cost_micro(VOICE, VOICE_MAX_SECONDS)
-    check(conn, worst)
-    body = {"model": VOICE, "audio": base64.b64encode(audio).decode(), "mime_type": mime}
-    if language:
-        body["language"] = language
-    try:
-        data = _post("/audio/transcriptions", body, timeout=60)
-    except (urllib.error.URLError, TimeoutError) as exc:
-        _log(conn, VOICE, purpose, units=VOICE_MAX_SECONDS, cost_micro=worst,
-             estimated=True, ok=False)
-        raise BudgetStop(f"Meta API call failed: {exc}") from exc
-    seconds = data.get("duration") or (data.get("usage") or {}).get("seconds")
-    if seconds is None:
-        _log(conn, VOICE, purpose, units=VOICE_MAX_SECONDS, cost_micro=worst,
-             estimated=True, ok=True)
-    else:
-        seconds = min(float(seconds), VOICE_MAX_SECONDS)
-        _log(conn, VOICE, purpose, units=seconds, cost_micro=unit_cost_micro(VOICE, seconds),
-             estimated=False, ok=True)
-    return str(data.get("text") or "")
-
-
-IMAGE_TOKENS_WORST = 6000  # a large photo, tiled; priced as input tokens
+        raise BudgetStop("Recording is too long; keep it under a minute. / "
+                         "Запись слишком длинная; запишите фразу короче минуты.")
+    return voice.transcribe(conn, audio, mime, language, purpose=purpose)["transcript"]
 
 
 def vision(conn: sqlite3.Connection, purpose: str, prompt: str, image_b64: str, mime: str, *,
            max_output_tokens: int = 3000) -> dict:
-    """Spark reading one image (an order form, a chat screenshot) plus a text
-    prompt. The worst case counts the image as IMAGE_TOKENS_WORST tokens, not
-    as the length of its base64 text."""
+    """Keep photo intake's raw response and conservative image reservation."""
     input_ = [{"role": "user", "content": [
         {"type": "input_text", "text": prompt},
         {"type": "input_image", "image_url": f"data:{mime};base64,{image_b64}"}]}]
-    est = len(prompt) // 2 + IMAGE_TOKENS_WORST + 1000
-    return respond(conn, purpose, input_, max_output_tokens=max_output_tokens,
-                   est_input_tokens=est)
+    return respond(conn, purpose, input_, max_output_tokens=max_output_tokens)
 
 
 def budget_status(conn: sqlite3.Connection) -> dict:

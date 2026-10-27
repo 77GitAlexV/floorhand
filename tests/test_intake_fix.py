@@ -136,7 +136,7 @@ def test_photo_quotes_must_be_in_the_transcript(conn, monkeypatch):
     assert f["customer"]["status"] != "ok"  # "Home & Co" is not on the photo: dropped
 
 
-def test_vision_budget_counts_the_image_not_its_base64(conn, monkeypatch):
+def test_vision_budget_reserves_opaque_image_context(conn, monkeypatch):
     monkeypatch.setenv("FLOORHAND_META_LIVE", "1")
     monkeypatch.setenv("MODEL_API_KEY", "test")
     monkeypatch.setenv("FLOORHAND_BUDGET_USD", "0.01")
@@ -144,6 +144,11 @@ def test_vision_budget_counts_the_image_not_its_base64(conn, monkeypatch):
     monkeypatch.setattr(models, "_post", lambda path, body, timeout=120: sent.append(body) or
                         {"output_text": "{}", "usage": {"input_tokens": 3000, "output_tokens": 50}})
     big = "A" * 4_000_000  # ~3 MB photo: by text length it would look like 2M tokens
+    # Opaque images reserve the full context instead of guessing image tokens.
+    with pytest.raises(models.BudgetStop):
+        models.vision(conn, "test", "read it", big, "image/png")
+    assert not sent
+    monkeypatch.setenv("FLOORHAND_BUDGET_USD", "120")
     models.vision(conn, "test", "read it", big, "image/png")
     assert sent and sent[0]["input"][0]["content"][1]["type"] == "input_image"
     monkeypatch.delenv("FLOORHAND_META_LIVE")
