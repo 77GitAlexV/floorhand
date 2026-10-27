@@ -5,6 +5,11 @@ import "./today.js";     // owner: feed of decisions, Ask box, morning summary
 import "./work.js";      // worker: my work
 import "./money.js";     // worker: my money
 import "./floor.js";     // owner: the floor as a pipeline
+import "./live.js";
+import "./channels.js";
+import "./shelf.js";
+import "./outbox.js";
+import "./tablet.js";
 import "./orders.js";    // office: orders, intake, order card
 import "./shipping.js";  // office: shipping in three taps
 import "./paperwork.js"; // office: order sheets, delivery notes, outbox

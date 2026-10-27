@@ -78,12 +78,17 @@ export function idem() {
 
 // --- api ----------------------------------------------------------------------
 export async function api(path, body, { method } = {}) {
+  return apiFetch(path, body === undefined && !method ? {} : {
+    method: method || "POST", headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** Raw uploads share session expiry, bilingual answers and structured refusals. */
+export async function apiFetch(path, options = {}) {
   let res;
   try {
-    res = await fetch(path, body === undefined && !method ? {} : {
-      method: method || "POST", headers: { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    res = await fetch(path, options);
   } catch {
     return { ok: false, offline: true, message: t("cantReach") };
   }
@@ -94,8 +99,11 @@ export async function api(path, body, { method } = {}) {
     return { ok: false, silent: true };
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return { ok: false, message: data.message || data.detail || res.statusText };
-  return Array.isArray(data) ? { ok: true, list: data } : { ok: true, ...data };
+  if (Array.isArray(data)) return { ok: res.ok, list: data };
+  const message = (state.lang === "ru" ? data.message_ru || data.message : data.message)
+    || (typeof data.detail === "string" ? data.detail : data.detail ? t("checkFields") : res.statusText);
+  // Refusals can offer choices (e.g. keep work or rework). Keep their stored options.
+  return { ...data, ok: res.ok && data.ok !== false, message };
 }
 
 // --- answers: every action answers in words --------------------------------------
@@ -193,16 +201,18 @@ export function go(id, params = {}) {
   if (location.hash === hash) render(); else location.hash = hash;
 }
 function parseHash() {
-  const m = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const [path, search = ""] = location.hash.replace(/^#\/?/, "").split("?");
+  const m = path.split("/").filter(Boolean);
   const id = m[0] || null;
   const screen = id && SCREENS.get(id);
   const params = {};
   if (screen && screen.params) screen.params.forEach((k, i) => { if (m[i + 1] !== undefined) params[k] = decodeURIComponent(m[i + 1]); });
-  return { id, params };
+  return { id, params, query: new URLSearchParams(search) };
 }
 addEventListener("hashchange", () => render());
 
 export async function signOut() {
+  if (state.me?.tablet && pref("tablet_device", "0") === "1") await api("/api/marking/tablet/leave", {});
   await api("/api/logout", {});
   state.me = null; location.hash = ""; render();
 }
@@ -215,6 +225,7 @@ export async function refreshMe() {
 // --- rendering -------------------------------------------------------------------
 let shell = null;     // set by app.js: shell.render(root, { me, screen, nav })
 let renderSeq = 0;
+let disposers = [];
 export function setShell(s) { shell = s; }
 export function applyPrefs() {
   const html = document.documentElement;
@@ -225,6 +236,7 @@ export function applyPrefs() {
 
 export async function render() {
   const seq = ++renderSeq;
+  disposers.splice(0).forEach(stop => stop());
   applyPrefs();
   if (!state.me) await refreshMe();
   if (seq !== renderSeq) return;
@@ -233,13 +245,15 @@ export async function render() {
   const role = roleOf(me);
   document.body.dataset.role = role || "guest";
   const nav = me ? navFor(me) : [];
-  let { id, params } = parseHash();
+  let { id, params, query } = parseHash();
   let screen = id && SCREENS.get(id);
   if (!me) screen = SCREENS.get("login");
   else if (!screen || !allowed(screen, me)) screen = nav[0];
   state.screen = screen.id; state.params = params;
   document.title = `${screen.title ? screen.title(state.lang) : "Floorhand"} · Floorhand`;
-  const ctx = { me, role, params, go, refresh: () => render(), t, lang: state.lang };
+  const ctx = { me, role, params, query, go, refresh: () => render(), t, lang: state.lang,
+    isActive: () => seq === renderSeq,
+    onDispose: stop => { if (seq === renderSeq) disposers.push(stop); else stop(); } };
   const main = shell.render(root, { me, role, screen, nav, ctx });
   main.classList.add("screen-enter");
   await screen.render(main, ctx);
@@ -249,14 +263,14 @@ export async function render() {
 
 addStrings({
   en: {
-    ok: "OK", cantReach: "No connection. Try again.", soon: "Coming in the next build.",
+    ok: "OK", cantReach: "No connection. Try again.", checkFields: "Check the entered fields and try again.", soon: "Coming in the next build.",
     signOut: "Sign out", back: "Back", more: "More", close: "Close", yes: "Yes", no: "No",
     pcs: "pc(s)", pc: "pc", of: "of", today: "Today", search: "Search",
     nothing: "Nothing here yet.", loading: "Loading…", fact: "FACT", calc: "CALC", est: "ESTIMATE",
     toStock: "to stock", due: "due", lang: "Language",
   },
   ru: {
-    ok: "OK", cantReach: "Нет связи. Попробуй ещё раз.", soon: "Будет в следующей сборке.",
+    ok: "OK", cantReach: "Нет связи. Попробуй ещё раз.", checkFields: "Проверьте введённые поля и повторите.", soon: "Будет в следующей сборке.",
     signOut: "Выйти", back: "Назад", more: "Ещё", close: "Закрыть", yes: "Да", no: "Нет",
     pcs: "шт", pc: "шт", of: "из", today: "Сегодня", search: "Поиск",
     nothing: "Пока пусто.", loading: "Загрузка…", fact: "ФАКТ", calc: "РАСЧЁТ", est: "ОЦЕНКА",

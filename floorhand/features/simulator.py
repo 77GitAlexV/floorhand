@@ -19,7 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request as StarletteRequest
 
 from .. import db, domain
-from ..web import COOKIE, Session, office, session
+from ..web import COOKIE, Session, get_conn, office, session
 
 log = logging.getLogger(__name__)
 SCHEMA = """
@@ -276,6 +276,36 @@ class PhoneActivity:
         await self.app(scope, receive, send)
 
 
+MARK_COLUMNS = (
+    "SELECT e.id, e.kind, e.unit_id, e.stage_id, e.created_at, u.seq, o.number, "
+    "pr.name AS product, s.name_en AS stage, s.name_ru AS stage_ru, p.name AS worker "
+    "FROM work_events e JOIN units u ON u.id = e.unit_id "
+    "JOIN orders o ON o.id = u.order_id JOIN stages s ON s.id = e.stage_id "
+    "JOIN people p ON p.id = e.person_id JOIN products pr ON pr.id = o.product_id "
+)
+
+
+def mark_card(row):
+    """The snapshot and stream share a small, money-free mark projection."""
+    data = dict(row)
+    data["worker"] = next(iter(data["worker"].split()), "")
+    data.update(fact="FACT", type="marked" if row["kind"] == "done" else "undo",
+                message="Work recorded." if row["kind"] == "done" else "Work undone.",
+                message_ru="Работа отмечена." if row["kind"] == "done" else "Отметка отменена.")
+    return data
+
+
+def live_snapshot(conn):
+    """A TV opens with recent activity, including marks made while disconnected."""
+    orders = domain.orders_list(conn)
+    return {"date": domain.today(conn), "as_of": domain.now(conn).isoformat(timespec="seconds"),
+            "fact": "FACT", "stages": domain.floor_overview(conn) if domain.stages(conn) else [],
+            "late": [{k: o[k] for k in ("id", "number", "product", "late_days")}
+                     for o in orders["attention"] if o["late_days"] > 0],
+            "marks": [mark_card(r) for r in conn.execute(MARK_COLUMNS + "ORDER BY e.id DESC LIMIT 8")],
+            "message": "Live shop snapshot refreshed.", "message_ru": "Снимок цеха обновлён."}
+
+
 class Hub:
     """One cursor per process, bounded subscriber queues; DB polling also sees humans."""
 
@@ -316,31 +346,22 @@ class Hub:
                 self.cursors = [conn.execute(f"SELECT COALESCE(MAX(id), 0) FROM {table}").fetchone()[0]
                                 for table in ("work_events", "orders", "shipments")]
                 return
-            rows = conn.execute(
-                "SELECT e.id, e.kind, e.unit_id, e.stage_id, o.number, s.name_en AS stage, "
-                "s.name_ru AS stage_ru, p.name AS worker FROM work_events e "
-                "JOIN units u ON u.id = e.unit_id JOIN orders o ON o.id = u.order_id "
-                "JOIN stages s ON s.id = e.stage_id JOIN people p ON p.id = e.person_id "
-                "WHERE e.id > ? ORDER BY e.id", (self.cursors[0],)).fetchall()
+            rows = conn.execute(MARK_COLUMNS + "WHERE e.id > ? ORDER BY e.id", (self.cursors[0],)).fetchall()
             for row in rows:
-                data = dict(row)
-                data["worker"] = next(iter(data["worker"].split()), "")
-                data["fact"] = "FACT"
-                data.update(message="Work recorded." if row["kind"] == "done" else "Work undone.",
-                            message_ru="Работа отмечена." if row["kind"] == "done" else "Отметка отменена.")
+                data = mark_card(row)
                 self.publish(("marked" if row["kind"] == "done" else "undo", data))
                 self.cursors[0] = row["id"]
-            for row in conn.execute("SELECT id, number, source FROM orders WHERE id > ? ORDER BY id",
+            for row in conn.execute("SELECT id, number, source, created_at FROM orders WHERE id > ? ORDER BY id",
                                     (self.cursors[1],)).fetchall():
                 self.publish(("order_created", {**dict(row), "fact": "FACT",
                                               "message": "Order created.", "message_ru": "Заказ создан."}))
                 self.cursors[1] = row["id"]
             for row in conn.execute(
-                    "SELECT s.id, GROUP_CONCAT(DISTINCT o.number) AS numbers FROM shipments s "
+                    "SELECT s.id, s.created_at, GROUP_CONCAT(DISTINCT o.number) AS numbers FROM shipments s "
                     "JOIN shipment_lines sl ON sl.shipment_id = s.id "
                     "JOIN units u ON u.id = sl.unit_id JOIN orders o ON o.id = u.order_id "
                     "WHERE s.id > ? GROUP BY s.id ORDER BY s.id", (self.cursors[2],)).fetchall():
-                self.publish(("shipment", {"id": row["id"], "fact": "FACT",
+                self.publish(("shipment", {"id": row["id"], "created_at": row["created_at"], "fact": "FACT",
                                           "numbers": [int(n) for n in row["numbers"].split(",")],
                                           "message": "Items shipped.", "message_ru": "Изделия отгружены."}))
                 self.cursors[2] = row["id"]
@@ -447,6 +468,11 @@ def owner(s: Session = Depends(office)):
 @router.get("/api/sim/status")
 def status(request: Request, s: Session = Depends(office)):
     return runtime(request).status()
+
+
+@router.get("/api/live/snapshot")
+def live_snapshot_route(s: Session = Depends(office), conn=Depends(get_conn)):
+    return live_snapshot(conn)
 
 
 @router.post("/api/sim/start")

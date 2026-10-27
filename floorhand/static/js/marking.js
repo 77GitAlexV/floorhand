@@ -1,7 +1,7 @@
 // Every way a worker marks work, on top of /api/marking (features/marking.py):
 // scan or type the sheet number, speak, the offline queue, the end-of-day check and
 // "did other work" claims. Voice only proposes; nothing is recorded before [Yes].
-import { addStrings, api, t, esc, state, flash, toast, idem } from "./core.js";
+import { addStrings, api, apiFetch, t, esc, state, flash, toast, idem } from "./core.js";
 import { btn, chip, sheet } from "./ui.js";
 
 addStrings({
@@ -18,6 +18,8 @@ addStrings({
     mkWhat: "What was it (optional)", mkSendManager: "Send to manager", mkMyClaims: "My other work",
     mkSheetOld: "About this sheet", mkForDay: "For which day", mkPhoto: "Photo of sheet",
     cl_pending: "waiting", cl_approved: "approved", cl_rejected: "rejected", cl_withdrawn: "withdrawn",
+    mkWithdraw: "Withdraw claim",
+    mkAudio: "Upload a voice recording", mkAudioHint: "Server transcription needs Meta enabled. You can always type the words with Speak.",
   },
   ru: {
     mkScanTitle: "Скан или номер листка", mkScanHint: "Наведи сканер на QR или введи номер с листка: 214 или 214-2.",
@@ -32,6 +34,8 @@ addStrings({
     mkWhat: "Что именно (необязательно)", mkSendManager: "Отправить менеджеру", mkMyClaims: "Моя другая работа",
     mkSheetOld: "Про этот листок", mkForDay: "За какой день", mkPhoto: "Фото листка",
     cl_pending: "ждёт", cl_approved: "принято", cl_rejected: "отклонено", cl_withdrawn: "отозвано",
+    mkWithdraw: "Отозвать заявку",
+    mkAudio: "Загрузить запись голоса", mkAudioHint: "Для распознавания на сервере нужна включённая Meta. Через «Сказать» всегда можно ввести текст.",
   },
 });
 
@@ -151,6 +155,20 @@ export function photo(ctx) {
   input.click();
 }
 
+export function audio(ctx) {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "audio/webm,audio/ogg,audio/mp4,audio/wav";
+  input.onchange = async () => {
+    const file = input.files?.[0]; if (!file) return;
+    toast(t("mkAudioHint"));
+    try {
+      const r = await apiFetch("/api/marking/voice/audio", { method: "POST", headers: { "Content-Type": file.type || "audio/webm", "X-Created-At": new Date().toISOString() }, body: file });
+      await proposal(r, ctx);
+    } catch { flash(false, t("cantReach")); }
+  };
+  input.click();
+}
+
 async function proposal(r, ctx) {
   if (r.silent) return;
   if (!r.ok) { flash(false, r.message); return; }
@@ -208,7 +226,7 @@ export async function otherWork(ctx) {
   if (!c.ok) { if (!c.silent) flash(false, c.message); return; }
   let pick = null;
   const mine = (c.claims || []).slice(0, 5).map(x => `<li><span>${esc(x.description)} · ${esc(x.work_date)}</span>
-    <span class="muted">${t("cl_" + x.status)}${x.decision_note ? ` — ${esc(x.decision_note)}` : ""}</span></li>`).join("");
+    <span class="muted">${t("cl_" + x.status)}${x.decision_note ? ` — ${esc(x.decision_note)}` : ""}${x.status === "pending" ? btn({ label: t("mkWithdraw"), kind: "ghost", attrs: `data-withdraw="${x.id}"` }) : ""}</span></li>`).join("");
   const p = sheet({ title: t("mkOtherTitle"),
     body: `<div class="chips" id="mkPresets">${(c.presets || []).map(x => chip(esc(x.name), { attrs: `data-preset="${x.id}" data-min="${x.by_minutes ? 1 : 0}"` })).join("")}</div>
       <label class="muted" id="mkNLabel" style="display:block;margin-top:12px">${t("mkMinutes")}</label>
@@ -218,6 +236,12 @@ export async function otherWork(ctx) {
       ${mine ? `<h3 class="sec">${t("mkMyClaims")}</h3><ul class="plain">${mine}</ul>` : ""}`,
     actions: [{ id: "go", label: t("mkSendManager"), kind: "primary" }, { id: "no", label: t("back") }] });
   let byMin = true;
+  document.querySelectorAll("#sheet [data-withdraw]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const r = await api(`/api/marking/claims/${b.dataset.withdraw}/withdraw`, {});
+    if (!r.silent) flash(r.ok, r.message);
+    if (r.ok) document.querySelector('#sheet [data-act="no"]')?.click(); else b.disabled = false;
+  });
   const vals = { n: 30, desc: "" };
   document.querySelectorAll("#mkPresets [data-preset]").forEach(b => b.onclick = () => {
     pick = Number(b.dataset.preset); byMin = b.dataset.min === "1";

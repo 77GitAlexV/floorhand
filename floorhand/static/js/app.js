@@ -1,11 +1,11 @@
 // Entry point: the shell (sidebar / bottom tabs) around whichever screen is on.
-import { state, t, esc, setShell, render, go, setLang, signOut, api, toast } from "./core.js";
+import { state, t, esc, setShell, render, go, setLang, signOut, api, toast, pref } from "./core.js";
 import { icon, avatar, brandMark } from "./ui.js";
 import "./screens/index.js";
 import { rememberCodeFromUrl } from "./marking.js";
 
 const shell = {
-  render(root, { me, role, screen, nav }) {
+  render(root, { me, role, screen, nav, ctx }) {
     const isOffice = role === "owner" || role === "manager";
     const showNav = me && nav.length > 1;
     root.className = `shell ${!me ? "guest" : isOffice ? "office" : "floor"} ${showNav ? "has-nav" : ""}`;
@@ -35,7 +35,22 @@ const shell = {
     if (me && me.tablet) {
       const arm = () => { clearTimeout(shell.idle); shell.idle = setTimeout(signOut, 120000); };
       ["click", "touchstart", "keydown"].forEach(ev => root.addEventListener(ev, arm, { passive: true }));
+      ctx.onDispose(() => {
+        clearTimeout(shell.idle);
+        ["click", "touchstart", "keydown"].forEach(ev => root.removeEventListener(ev, arm));
+      });
       arm();
+      if (pref("tablet_device", "0") === "1") {
+        let lastPing = 0;
+        const ping = async () => {
+          if (Date.now() - lastPing < 10000) return;
+          lastPing = Date.now();
+          const p = await api("/api/marking/tablet/ping", {});
+          if (p.ok && !p.acting) { state.me = null; render(); }
+        };
+        ["click", "touchstart", "keydown"].forEach(ev => root.addEventListener(ev, ping, { passive: true }));
+        ctx.onDispose(() => ["click", "touchstart", "keydown"].forEach(ev => root.removeEventListener(ev, ping)));
+      }
     }
     return root.querySelector("#main");
   },

@@ -1,6 +1,9 @@
 """Rules the web front-end keeps (static/README.md). No browser needed: these read
 the files and the one server-rendered print page."""
+import ast
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -68,6 +71,55 @@ def test_index_loads_modules_and_answer_layer():
     assert 'type="module"' in html and "/static/js/app.js" in html
     for id_ in ("app", "sheet", "toasts", "answer"):
         assert f'id="{id_}"' in html
+
+
+def test_screen_interaction_contracts():
+    """Real ES modules: stored decisions, uploads, roles, SSE reconnect and disposal."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is optional; no packages are installed for front-end checks")
+    result = subprocess.run(
+        [node, "--experimental-vm-modules", "tests/frontend_screens.mjs"],
+        cwd=STATIC.parent.parent, capture_output=True, text=True, encoding="utf-8", timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Front-end interaction contracts passed." in result.stdout
+
+
+def test_live_motion_is_optional_and_phone_layout_is_present():
+    css = (STATIC / "css" / "ui.css").read_text(encoding="utf-8")
+    # All hero animations opt in to motion, including the decorative flow rail.
+    start = css.index("@media (prefers-reduced-motion: no-preference)", css.index("/* Channels, shelf"))
+    motion = css[start:css.index("@keyframes live-pulse", start)]
+    for selector in (".flow-track i", ".queue-changed .live-queue b", ".live-ticker li:first-child"):
+        assert selector in motion
+    phone = css[css.index("@media (max-width: 700px)"):]
+    assert ".shelf-layout, .live-bottom" in phone
+    assert "overflow-x: auto" in phone  # all office navigation stays reachable
+    live = (SCREENS / "live.js").read_text(encoding="utf-8")
+    assert not re.search(r"\bmoney\(", live)
+
+
+def test_route_audit_covers_every_declared_route():
+    repo = STATIC.parent.parent
+    notes = (repo / "NOTES-screens.md").read_text(encoding="utf-8")
+    sources = [repo / "floorhand" / "main.py", *sorted((repo / "floorhand" / "features").glob("*.py"))]
+    for source in sources:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        prefix = ""
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
+                if getattr(stmt.value.func, "id", "") == "APIRouter":
+                    prefix = next((ast.literal_eval(k.value) for k in stmt.value.keywords if k.arg == "prefix"), "")
+        for stmt in tree.body:
+            if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in stmt.decorator_list:
+                if not isinstance(dec, ast.Call) or not isinstance(dec.func, ast.Attribute):
+                    continue
+                if dec.func.attr not in {"get", "post", "put", "delete", "patch"}:
+                    continue
+                route = prefix + ast.literal_eval(dec.args[0])
+                assert f'`{dec.func.attr.upper()} {route}`' in notes, (source.name, route)
 
 
 def test_delivery_note_prints_from_template(tmp_path, monkeypatch):
