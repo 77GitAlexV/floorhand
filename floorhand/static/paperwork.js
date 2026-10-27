@@ -160,11 +160,11 @@
     const o = await api("/api/paperwork/outbox");
     $("sending").textContent = o.sending ? t("on") : t("off");
     $("outbox").innerHTML = o.rows.map(r => `<li>
-      <span class="grow"><b>${esc(r.subject)}</b><br><small>${esc(r.to_addr)} · ${esc((r.created_at || "").slice(0, 16).replace("T", " "))}
+      <span class="grow"><b>${esc(r.subject)}</b><br><small>${esc(r.to_addr || r.to_name || "")} · ${esc((r.created_at || "").slice(0, 16).replace("T", " "))}
         ${r.error ? ` · <span class="warn">${esc(r.error)}</span>` : ""}</small></span>
       <span class="chip ${esc(r.status)}">${t(r.status)}</span>
       <a class="btn ghost" target="_blank" rel="noopener" href="/paperwork/outbox/${r.id}">${t("preview")}</a>
-      ${r.status !== "sent" ? `<button type="button" class="btn" data-send="${r.id}">${t("send")}</button>` : ""}
+      ${r.status !== "sent" && r.to_addr ? `<button type="button" class="btn" data-send="${r.id}">${t("send")}</button>` : ""}
     </li>`).join("") || `<li class="muted">${t("noMail")}</li>`;
     $("outbox").querySelectorAll("[data-send]").forEach(b => b.onclick = () => act(b, async () => {
       const r = await api(`/api/paperwork/outbox/${b.dataset.send}/send`, "POST");

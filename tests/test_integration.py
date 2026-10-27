@@ -63,3 +63,20 @@ def test_sheet_of_cancelled_order_is_refused_in_words(conn):
     with pytest.raises(DomainError, match="cancelled"):
         mk.mark(conn, mk.Actor(worker), code=f"/u/{token}", method="scan")
     assert conn.execute("SELECT COUNT(*) FROM work_events").fetchone()[0] == before
+
+
+def test_one_outbox_for_owner_cards_and_paperwork(conn):
+    """Rule 8: a purchase request from an owner card and a delivery note from paperwork
+    land in the same outbox; a row without an e-mail address is never sent."""
+    from floorhand.features import owner
+    boss = conn.execute("SELECT id FROM people WHERE role = 'owner'").fetchone()[0]
+    feed = owner.today_feed(conn, boss)
+    card = next(c for c in feed["cards"] if c["kind"] == "shortage")
+    owner.apply(conn, boss, card["id"], owner.DecideIn(pick=card["options"][0]["id"]))
+    rows = pw.outbox_list(conn)
+    purchase = next(r for r in rows if r["kind"] == "purchase")
+    assert purchase["to_addr"] is None and purchase["action_id"] == card["id"]
+    assert any(r["kind"] == "delivery_note" for r in rows)       # paperwork's seed drafts
+    r = pw.send_outbox(conn, _manager(conn), purchase["id"])
+    assert not r["ok"] and "No e-mail address" in r["message"]
+    assert conn.execute("SELECT status FROM outbox WHERE id = ?", (purchase["id"],)).fetchone()[0] == "draft"

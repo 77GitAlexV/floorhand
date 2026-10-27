@@ -566,3 +566,34 @@ mark.on { background: var(--sel); box-shadow: inset 0 -2px 0 var(--brand); }
 /* marking: secondary ways in under the work list */
 .row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 calc(72px + env(safe-area-inset-bottom)); }
 .row-actions .btn { min-height: 44px; }
+
+/* owner Today: decision cards in detail */
+.decision .d-stats { font-size: .85em; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.decision .d-stats .shadow { color: var(--brand); font-weight: 600; }
+.decision.shadowed { border-style: dashed; border-left-style: solid; }
+.decision.k-shortage { border-left-color: var(--warn); }
+ul.nums { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px 24px; }
+ul.nums li { display: flex; flex-direction: column; }
+ul.nums li b { font-size: 1.3em; font-variant-numeric: tabular-nums; }
+ul.nums li span { color: var(--ink-3); font-size: .85em; }
+.decision .d-more { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+.decision .d-more[hidden] { display: none; }
+.decision h4 { margin: 8px 0 2px; }
+.tag.fact { background: var(--good-soft); color: var(--good); }
+.tag.calc { background: var(--brand-soft); color: var(--brand); }
+.tag.estimate { background: var(--warn-soft); color: var(--warn); }
+ul.facts { list-style: none; padding: 0; margin: 4px 0; }
+ul.facts li { padding: 5px 0; border-bottom: 1px dashed var(--line); }
+ul.lines { list-style: none; padding: 0; margin: 0; }
+ul.lines li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+ul.lines li.risky { background: var(--hot-soft); margin: 0 -8px; padding: 6px 8px; border-radius: var(--r-sm); }
+ul.lines label { display: flex; gap: 8px; align-items: flex-start; flex: 1; min-width: 220px; }
+ul.lines label small { display: block; color: var(--ink-3); }
+ul.lines input[type=checkbox], ul.lines input[type=radio] { width: 22px; height: 22px; margin-top: 3px; flex: none; accent-color: var(--brand); }
+ul.lines select { max-width: 260px; min-height: 44px; }
+.askbox .answer { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+ul.decided .st-applied { color: var(--good); }
+ul.decided .st-rejected { color: var(--bad); }
+/* stock */
+.tbl tr.short td { background: var(--hot-soft); }
+ul.journal li { display: grid; grid-template-columns: 8em 1fr auto; gap: 8px; }

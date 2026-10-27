@@ -92,18 +92,23 @@ CREATE TABLE IF NOT EXISTS customer_contacts (
 -- Everything sent outside goes here first (rule 8). Content is frozen once
 -- written; only status, error and sent_at move.
 CREATE TABLE IF NOT EXISTS outbox (
+    -- The ONE outbox of the shop (rule 8): delivery notes from paperwork, purchase
+    -- requests and notes to customers from the owner's cards. Nothing leaves without
+    -- passing here; sending happens only when SMTP is configured.
     id              INTEGER PRIMARY KEY,
-    kind            TEXT NOT NULL,      -- delivery_note
-    ref_id          INTEGER NOT NULL,   -- shipment id
-    to_addr         TEXT NOT NULL,
+    kind            TEXT NOT NULL,      -- delivery_note | purchase | email
+    ref_id          INTEGER,            -- shipment id for a delivery note
+    to_addr         TEXT,               -- e-mail address; NULL = only a name known yet
+    to_name         TEXT,               -- supplier / customer name (owner cards)
     subject         TEXT NOT NULL,
     body            TEXT NOT NULL,
     attachment_name TEXT,
     attachment_html TEXT,
-    status          TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'failed')),
+    status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'failed')),
     error           TEXT,
     created_at      TEXT NOT NULL,
-    created_by      INTEGER NOT NULL REFERENCES people(id),
+    created_by      INTEGER REFERENCES people(id),
+    action_id       INTEGER REFERENCES agent_actions(id),  -- the owner card that made it
     sent_at         TEXT,
     idem_key        TEXT UNIQUE
 );
@@ -114,7 +119,8 @@ BEGIN SELECT RAISE(ABORT, 'outbox is permanent'); END;
 
 CREATE TRIGGER IF NOT EXISTS outbox_frozen BEFORE UPDATE ON outbox
 WHEN NEW.kind IS NOT OLD.kind OR NEW.ref_id IS NOT OLD.ref_id
-  OR NEW.to_addr IS NOT OLD.to_addr OR NEW.subject IS NOT OLD.subject
+  OR NEW.to_addr IS NOT OLD.to_addr OR NEW.to_name IS NOT OLD.to_name
+  OR NEW.action_id IS NOT OLD.action_id OR NEW.subject IS NOT OLD.subject
   OR NEW.body IS NOT OLD.body OR NEW.attachment_name IS NOT OLD.attachment_name
   OR NEW.attachment_html IS NOT OLD.attachment_html OR NEW.created_at IS NOT OLD.created_at
   OR NEW.created_by IS NOT OLD.created_by OR NEW.idem_key IS NOT OLD.idem_key
@@ -752,6 +758,10 @@ def send_outbox(conn, person_id: int, outbox_id: int) -> dict:
         if row["status"] == "sent":
             return {"ok": True, "already": True, "outbox_id": outbox_id, "status": "sent",
                     "message": f"Already sent on {row['sent_at'][:16].replace('T', ' ')}. Nothing changed."}
+        if not row["to_addr"]:
+            return {"ok": False, "already": False, "outbox_id": outbox_id, "status": row["status"],
+                    "message": f"No e-mail address for {row['to_name'] or 'this message'}. "
+                               "It stays in the outbox as a draft."}
         config = smtp_config()
         if config is None:
             return {"ok": True, "already": False, "outbox_id": outbox_id, "status": row["status"],
@@ -769,7 +779,7 @@ def send_outbox(conn, person_id: int, outbox_id: int) -> dict:
 
 def outbox_list(conn, limit: int = 50) -> list[dict]:
     return [dict(r) for r in conn.execute(
-        "SELECT o.id, o.kind, o.ref_id, o.to_addr, o.subject, o.body, o.attachment_name, "
+        "SELECT o.id, o.kind, o.ref_id, o.to_addr, o.to_name, o.action_id, o.subject, o.body, o.attachment_name, "
         "o.status, o.error, o.created_at, o.sent_at, c.name AS customer "
         "FROM outbox o LEFT JOIN shipments s ON s.id = o.ref_id "
         "LEFT JOIN customers c ON c.id = s.customer_id ORDER BY o.id DESC LIMIT ?",

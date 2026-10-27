@@ -529,7 +529,7 @@ def test_claim_limits_tablet_and_order_hint(conn):
     mk.create_claim(conn, me, description="Cleaning the floor", minutes=500)
     with pytest.raises(DomainError, match="over 10 hours"):
         mk.create_claim(conn, me, description="More cleaning", minutes=200)
-    num = conn.execute("SELECT number FROM orders LIMIT 1").fetchone()[0]
+    num = conn.execute("SELECT number FROM orders WHERE number >= 100 ORDER BY id LIMIT 1").fetchone()[0]
     h = mk.create_claim(conn, me, description=f"Armchair {num} no rate", minutes=30)
     assert h["hint_order"] == num and "mark it as work" in h["message"]
 
