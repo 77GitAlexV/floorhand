@@ -33,13 +33,41 @@ MONTHS = {m: i for i, m in enumerate(
 WORD_NUMBERS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
                 "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
                 "pair": 2, "couple": 2}
+WORD_NUMBERS.update(dict(zip(
+    "один одна одно два две три четыре пять шесть семь восемь девять десять одиннадцать двенадцать тринадцать четырнадцать пятнадцать шестнадцать семнадцать восемнадцать девятнадцать двадцать тридцать пара пару".split(),
+    (1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 30, 2, 2))))
+WORD_NUMBERS.update({"thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+                     "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30})
 STOCK_WORDS = ("to stock", "for stock", "for the warehouse", "на склад")
+
+# Only the fictional demo catalog is translated; unknown names stay questions.
+RU_WORDS = {
+    "cozy": "кози", "lord": "лорд", "nordic": "нордик", "bruno": "бруно",
+    "oslo": "осло", "lina": "лина", "bunny": "банни",
+    "armchair": "кресло кресла кресел креслу креслы", "chair": "стул стула стулья стульев",
+    "rocking": "качалка качалки качалок", "sofa": "диван дивана диваны диванов",
+    "daybed": "кушетка кушетки кушеток", "pouf": "пуф пуфа пуфы пуфов",
+    "round": "круглый круглые круглых круглого", "square": "квадратный квадратные квадратных",
+    "kids": "детское детские детских детский", "footstool": "подставка подставки подставок",
+    "velvet": "велюр велюра бархат бархата", "boucle": "букле", "linen": "лен лён льна",
+    "chenille": "шенилл шенилла", "beige": "бежевый бежевая бежевое бежевые беж",
+    "graphite": "графит графитовый графитовая", "milk": "молоко молочный молочная молочное",
+    "sand": "песочный песочная песочное", "emerald": "изумруд изумрудный изумрудная",
+    "grey": "серый серая серое", "ash": "пепельный пепельная пепельное",
+    "walnut": "орех ореховый ореховые", "oak": "дуб дубовый дубовые",
+    "black": "черный чёрный черные чёрные", "natural": "натуральный натуральные натуральное",
+}
+RU_TOKENS = {ru: en for en, words in RU_WORDS.items() for ru in words.split()}
+RU_PRODUCTS = {"Nordic lounge chair": ("кресло Нордик",),
+               "Lord rocking chair": ("качалка Лорд", "кресло качалка Лорд"),
+               "Footstool": ("подставка для ног",)}
 
 
 # --- catalog --------------------------------------------------------------
 
 def norm(text: str) -> str:
-    words = re.findall(r"[a-zа-яё0-9]+", text.lower().replace("-", " "))
+    text = re.sub(r"(\d+)\s*[- ]местн[а-яё]*", r"\1 seat", text.lower())
+    words = [RU_TOKENS.get(w, w) for w in re.findall(r"[a-zа-яё0-9]+", text.replace("-", " "))]
     return " ".join(w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
                     for w in words)
 
@@ -65,18 +93,18 @@ def _match(kind: str, text: str, cat: dict) -> tuple[int | None, list[dict]]:
         return None, []
     if t in cat["synonyms"][kind]:
         return cat["synonyms"][kind][t], []
-    exact = [i for i, n in names.items() if norm(n) == t]
+    labels = {i: [norm(n)] + ([norm(a) for a in RU_PRODUCTS.get(n, ())] if kind == "product" else [])
+              for i, n in names.items()}
+    exact = [i for i in names if t in labels[i]]
     if exact:
         return exact[0], []
     tw = set(t.split())
-    contained = [i for i, n in names.items() if set(norm(n).split()) <= tw]
+    contained = [i for i in names if any(set(label.split()) <= tw for label in labels[i])]
     if len(contained) == 1:
         return contained[0], []
-    if len(contained) > 1:  # "lord rocking chair" contains "lord ... chair" too: longest wins
-        best = max(contained, key=lambda i: len(norm(names[i]).split()))
-        if sum(len(norm(names[i]).split()) == len(norm(names[best]).split())
-               for i in contained) == 1:
-            return best, []
+    # Several complete names are competing evidence, not permission to pick one.
+    if len(contained) > 1:
+        return None, [{"id": i, "label": names[i]} for i in contained[:3]]
     # Not certain: offer the closest names. Names sharing a real word with the
     # text ("pouf", "lord") go first and push out mere look-alikes; digits do
     # not count as shared ("3 poufs" is not "3-seat").
@@ -98,42 +126,89 @@ def _variant(text: str, cat: dict) -> dict:
     fabrics = [f for f in cat["fabrics"] if set(norm(f).split()) <= t]
     frames = [f for f in cat["frames"] if norm(f) in t]
     partial = [f for f in cat["fabrics"] if set(norm(f).split()) & t]
+    unknown = bool(re.search(r"\b(?:fabric|upholstery|ткань|обивка)\s*[:=]\s*\S", text, re.I)) and not fabrics
+    unknown_frame = bool(re.search(r"\b(?:frame|legs|каркас|ножки)\s*[:=]\s*\S", text, re.I)) and not frames
     return {"fabric": fabrics[0] if len(fabrics) == 1 else None,
             "fabric_options": fabrics if len(fabrics) > 1 else ([] if fabrics else partial[:3]),
-            "frame": frames[0] if len(frames) == 1 else None}
+            "frame": frames[0] if len(frames) == 1 else None,
+            "needs_check": len(frames) > 1 or unknown or unknown_frame}
+
+
+RU_MONTHS = dict(zip("января февраля марта апреля мая июня июля августа сентября октября ноября декабря".split(), range(1, 13)))
+WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
+            "saturday": 5, "sunday": 6, "понедельник": 0, "понедельнику": 0,
+            "вторник": 1, "вторнику": 1, "среда": 2, "среду": 2, "среде": 2,
+            "четверг": 3, "четвергу": 3, "пятница": 4, "пятницу": 4, "пятнице": 4,
+            "суббота": 5, "субботу": 5, "субботе": 5, "воскресенье": 6, "воскресенью": 6}
+MONTH_PATTERN = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+DATE_PATTERN = re.compile(
+    r"\b20\d\d-\d{2}-\d{2}\b|\b\d{1,2}\.\d{1,2}\.20\d\d\b|"
+    rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{MONTH_PATTERN}|{'|'.join(RU_MONTHS)})(?:\s+20\d\d)?\b|"
+    rf"\b{MONTH_PATTERN}\.?\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+20\d\d)?\b|"
+    r"\b(?:к\s+)?\d{1,2}-(?:му|го)\b|"
+    rf"\b(?:(?:next|следующую|следующий|следующему)\s+)?(?:{'|'.join(WEEKDAYS)})\b|"
+    r"\b(?:today|tomorrow|tmrw|сегодня|завтра|послезавтра)\b", re.I)
+
+
+def _one_date(text: str, today: date) -> date | None:
+    t = text.lower()
+    try:
+        if re.fullmatch(r"20\d\d-\d{2}-\d{2}", t):
+            return date.fromisoformat(t)
+        if re.fullmatch(r"\d{1,2}\.\d{1,2}\.20\d\d", t):
+            day, month, year = map(int, t.split("."))
+            return date(year, month, day)
+        offsets = {"today": 0, "сегодня": 0, "tomorrow": 1, "tmrw": 1, "завтра": 1, "послезавтра": 2}
+        if t in offsets:
+            return today + timedelta(days=offsets[t])
+        weekday = t.split()[-1]
+        if weekday in WEEKDAYS:
+            delta = (WEEKDAYS[weekday] - today.weekday()) % 7
+            if delta == 0 and len(t.split()) > 1:
+                delta = 7
+            return today + timedelta(days=delta)
+        if m := re.fullmatch(r"(?:к\s+)?(\d{1,2})-(?:му|го)", t):
+            day = int(m[1])
+            month = today.month + (day < today.day)
+            return date(today.year + (month > 12), (month - 1) % 12 + 1, day)
+        words = t.replace(".", "").replace(",", "").split()
+        if words[0][0].isdigit():
+            day = int(re.sub(r"\D", "", words[0]))
+            month = RU_MONTHS.get(words[1]) or MONTHS.get(words[1][:3])
+        else:
+            month = MONTHS.get(words[0][:3])
+            day = int(re.sub(r"\D", "", words[1]))
+        if len(words) > 2:
+            return date(int(words[2]), month, day)
+        d = date(today.year, month, day)
+        # Select the year before constructing the final date (safe across leap years).
+        return date(today.year + (d < today - timedelta(days=30)), month, day)
+    except (ValueError, TypeError, IndexError):
+        return None
 
 
 def _parse_date(text: str, today: date) -> date | None:
-    t = text.lower()
-    if m := re.search(r"\b(20\d\d)-(\d\d)-(\d\d)\b", t):
-        try:
-            return date(int(m[1]), int(m[2]), int(m[3]))
-        except ValueError:
-            return None
-    m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*\b", t)
-    m2 = re.search(r"\b([a-z]{3})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b", t)
-    day = month = None
-    if m and m[2] in MONTHS:
-        day, month = int(m[1]), MONTHS[m[2]]
-    elif m2 and m2[1] in MONTHS:
-        day, month = int(m2[2]), MONTHS[m2[1]]
-    if not month:
+    dates = [_one_date(m[0], today) for m in DATE_PATTERN.finditer(text)]
+    return dates[0] if dates and dates[0] is not None and len(set(dates)) == 1 else None
+
+
+def _date_field(text: str, today: date) -> dict | None:
+    matches = list(DATE_PATTERN.finditer(text))
+    if not matches:
         return None
-    try:
-        d = date(today.year, month, day)
-    except ValueError:
-        return None
-    return d if d >= today - timedelta(days=30) else d.replace(year=today.year + 1)
+    quote = matches[0][0] if len(matches) == 1 else text
+    d = _parse_date(quote, today)
+    return _field(d.isoformat() if d else quote, quote)
 
 
 # --- offline extraction (no model) ---------------------------------------
 
 HEADER_WORDS = {
-    "product": ("product", "item", "model", "article", "изделие", "модель", "товар"),
-    "qty": ("qty", "quantity", "pcs", "count", "amount", "кол", "шт"),
+    "product": ("product", "item", "model", "article", "издели", "модель", "товар", "наименование"),
+    "qty": ("qty", "quantity", "pcs", "count", "amount", "pieces", "units", "кол", "шт", "единиц"),
     "customer": ("customer", "client", "store", "shop", "buyer", "клиент", "покупатель"),
     "due_date": ("due", "deadline", "date", "ship by", "срок", "дата"),
-    "variant": ("fabric", "color", "colour", "variant", "upholstery", "ткань", "цвет"),
+    "variant": ("fabric", "color", "colour", "variant", "upholstery", "ткань", "цвет", "обивка", "вариант"),
     "frame": ("frame", "legs", "wood", "каркас", "ножки"),
 }
 
@@ -149,9 +224,11 @@ def _table(source: str) -> list[dict] | None:
     delim = max("\t;,|", key=lines[0].count)
     if lines[0].count(delim) < 1:
         return None
-    rows = list(csv.reader(io.StringIO("\n".join(lines)), delimiter=delim))
+    original = source.strip().splitlines(keepends=True)
+    reader = csv.reader(io.StringIO(source.strip()), delimiter=delim)
+    headers = next(reader)
     cols = {}
-    for idx, h in enumerate(rows[0]):  # columns by header, never by position
+    for idx, h in enumerate(headers):  # columns by header, never by position
         h = h.strip().lower()
         for key, words in HEADER_WORDS.items():
             if key not in cols and any(w in h for w in words):
@@ -160,101 +237,153 @@ def _table(source: str) -> list[dict] | None:
     if "product" not in cols:
         return None
     out = []
-    for row in rows[1:]:
+    previous = reader.line_num
+    for row in reader:
+        quote = "".join(original[previous:reader.line_num]).strip()
+        previous = reader.line_num
         cell = lambda k: row[cols[k]].strip() if k in cols and cols[k] < len(row) else ""  # noqa
         if not cell("product"):
             continue
-        variant = " ".join(x for x in (cell("variant"), cell("frame")) if x)
+        variant = " ".join(x for x in (("fabric: " + cell("variant")) if cell("variant") else "",
+                                       ("frame: " + cell("frame")) if cell("frame") else "") if x)
+        q, qq = _qty(cell("qty"))
         out.append({"product": _field(cell("product"), cell("product")),
-                    "qty": _field(cell("qty"), cell("qty")),
+                    "qty": _field(q, qq or cell("qty")),
                     "customer": _field(cell("customer"), cell("customer")),
                     "due_date": _field(cell("due_date"), cell("due_date")),
-                    "variant": _field(variant, variant),
-                    "line": delim.join(row)})
+                    "variant": _field(variant, quote if variant else None),
+                    "line": quote})
     return out
 
 
 def _mentions_product(text: str, cat: dict) -> bool:
     t = set(norm(text).split())
-    kinds = {"armchair", "chair", "pouf", "sofa", "daybed", "footstool", "stool", "rocker"}
+    kinds = {"armchair", "chair", "pouf", "sofa", "daybed", "footstool", "stool", "rocker", "rocking"}
     if t & kinds:
         return True
     return any(set(norm(n).split()) <= t for n in cat["product"].values()) or \
-        any(a in norm(text) for a in cat["synonyms"]["product"])
+        any(set(a.split()) <= t for a in cat["synonyms"]["product"])
 
 
 def _qty(clause: str) -> tuple[str | None, str | None]:
     """(value, quote) of the amount in a clause, ignoring numbers in dates
     and in product names like '3-seat'."""
-    cleaned = re.sub(r"\b\d+[- ]seat(?:er)?\b|\b20\d\d-\d\d-\d\d\b", " ", clause, flags=re.I)
-    cleaned = re.sub(r"\b\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,}\.?(?=\s|$)", lambda m:
-                     m[0] if m[0].split()[-1][:3].lower() not in MONTHS else " ", cleaned)
-    if m := re.search(r"(?:x|×)\s*(\d{1,3})\b|\b(\d{1,3})\s*(?:x|×|pcs|pieces|units|шт)\b",
-                      cleaned, re.I):
-        return m[1] or m[2], m[0]
-    if m := re.search(r"\b(\d{1,3})\b", cleaned):
-        return m[1], m[0]
-    for w in re.findall(r"[a-z]+", clause.lower()):
-        if w in WORD_NUMBERS:
-            q = re.search(rf"\b{w}\b", clause, re.I)
-            return str(WORD_NUMBERS[w]), q[0]
+    cleaned = DATE_PATTERN.sub(lambda m: " " * len(m[0]), clause)
+    cleaned = re.sub(r"\b\d+[- ](?:seat(?:er)?|местн[а-яё]*)\b", lambda m: " " * len(m[0]), cleaned, flags=re.I)
+    if cleaned.strip().lower() in WORD_NUMBERS:
+        return str(WORD_NUMBERS[cleaned.strip().lower()]), clause.strip()
+    correction = list(re.finditer(
+        r"\b(?:actually\s+make\s+it|correction\s*:?|поправка\s*:?\s*(?:сделайте)?|нет\s*,?\s*лучше)\s+",
+        cleaned, re.I))
+    if correction:
+        return _qty(clause[correction[-1].end():])
+    amounts = []
+    for m in re.finditer(r"(?<![\w-])(?:[x×]\s*)?(\d+)(?:\s*(?:[x×]|pcs|pieces|units|шт)\b)?(?![\w-])", cleaned, re.I):
+        amounts.append((int(m[1]), clause[m.start():m.end()]))
+    words = list(re.finditer(r"\b[a-zа-яё]+\b", cleaned, re.I))
+    skip = -1
+    for index, m in enumerate(words):
+        w = m[0].lower()
+        if index == skip or w not in WORD_NUMBERS:
+            continue
+        n, end = WORD_NUMBERS[w], m.end()
+        if n >= 20 and index + 1 < len(words):
+            following = words[index + 1]
+            one = WORD_NUMBERS.get(following[0].lower(), 0)
+            if 0 < one < 10 and re.fullmatch(r"[\s-]*", cleaned[m.end():following.start()]):
+                n, end, skip = n + one, following.end(), index + 1
+        # "a pair" is two, and the article in "a deadline" is not an amount.
+        if w not in ("a", "an"):
+            amounts.append((n, clause[m.start():end]))
+    if not amounts:
+        article = re.search(r"\b(?:a|an)\s+(?:Cozy|Lord|Nordic|Bruno|Round|Square|Footstool|Sofa|Daybed|Kids)\b", cleaned, re.I)
+        if article:
+            return "1", article[0].split()[0]
+    if amounts and len({n for n, _ in amounts}) == 1:
+        return str(amounts[0][0]), amounts[0][1]
     return None, None
 
 
-def _text(source: str, cat: dict, today: date) -> list[dict]:
-    # Customer and due date usually sit once in the message, not per line.
-    customer = None
-    low = norm(source)
-    for i, n in cat["customer"].items():
-        if norm(n) and norm(n) in low:
-            m = re.search(re.escape(n), source, re.I)
-            customer = _field(n, m[0] if m else n)
-            break
-    if customer is None:
-        for alias in cat["synonyms"]["customer"]:
-            if alias and alias in low:
-                m = re.search(r"\b" + r"\W+".join(map(re.escape, alias.split())), source, re.I)
-                if m:
-                    customer = _field(m[0], m[0])
-                    break
-    if customer is None and any(w in source.lower() for w in STOCK_WORDS):
-        w = next(w for w in STOCK_WORDS if w in source.lower())
-        customer = _field(STOCK, source[source.lower().index(w):][:len(w)])
-    due = None
-    for m in re.finditer(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,}\b|"
-                         r"\b[A-Za-z]{3,}\.?\s+\d{1,2}(?:st|nd|rd|th)?\b", source):
-        d = _parse_date(m[0], today)
-        if d:
-            due = _field(d.isoformat(), m[0])
-            break
+def _customer_field(text: str, cat: dict) -> dict | None:
+    found = []
+    for name in cat["customer"].values():
+        if m := re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text, re.I):
+            found.append(_field(name, m[0]))
+    for alias in cat["synonyms"]["customer"]:
+        if m := re.search(r"\b" + r"\W+".join(map(re.escape, alias.split())) + r"\b", text, re.I):
+            found.append(_field(m[0], m[0]))
+    for word in STOCK_WORDS:
+        if m := re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", text, re.I):
+            found.append(_field(STOCK, m[0]))
+    if found:
+        unique = {norm(f["value"]) for f in found}
+        return found[0] if len(unique) == 1 else _field(None, None)
+    if m := re.search(r"\b(?:customer|client|клиент|покупатель)\s*:\s*([^\n;]+)", text, re.I):
+        return _field(m[1].strip(), m[1].strip())
+    return None
 
-    clauses = []
-    for line in source.splitlines():
-        for part in re.split(r";|,\s+|\s+and\s+|\s+plus\s+|\.\s+", line):
-            if not part.strip():
-                continue
-            if _mentions_product(part, cat) or not clauses:
-                clauses.append(part.strip())
-            else:  # "in velvet beige", "walnut legs" belong to the previous item
-                clauses[-1] = clauses[-1] + " | " + part.strip()
-    out = []
-    for clause in clauses:
-        if not _mentions_product(clause, cat):
+
+def _active_source(source: str, cat: dict) -> str:
+    """A current order supersedes quoted history; a forwarded-only order still works."""
+    lines = source.splitlines(keepends=True)
+    history = r"forwarded message|original message|пересланное сообщение|исходное сообщение"
+    prefix = re.split(history, source, maxsplit=1, flags=re.I)[0]
+    has_current = _mentions_product("\n".join(ln for ln in prefix.splitlines()
+                                             if not ln.lstrip().startswith(">")), cat)
+    kept = []
+    for line in lines:
+        if re.search(history, line, re.I):
+            if has_current:
+                break
             continue
-        first = clause.split(" | ")[0]
-        q, qq = _qty(first)
-        v = _variant(clause.replace(" | ", " "), cat)
-        variant_text = " ".join(x for x in (v["fabric"], v["frame"]) if x)
-        out.append({"product": _field(first, first), "qty": _field(q, qq),
-                    "customer": customer or _field(None, None),
-                    "due_date": due or _field(None, None),
-                    "variant": _field(variant_text, None), "line": clause.replace(" | ", ", ")})
+        if has_current and line.lstrip().startswith(">"):
+            continue
+        kept.append(line)
+    return "".join(kept)
+
+
+def _text(source: str, cat: dict, today: date) -> list[dict]:
+    source = _active_source(source, cat)
+    customer = _customer_field(source, cat)
+    due = _date_field(source, today) if customer and customer["value"] else None
+    # Keep contiguous source slices so every quote survives grounding, including
+    # variants appended after a comma and metadata on the following line.
+    clauses = []
+    end = 0
+    for boundary in list(re.finditer(r"\n|;|,\s+|\s+(?:and|plus|и)\s+|\s*\+\s*|\.\s+", source, re.I)) + [None]:
+        stop = boundary.start() if boundary else len(source)
+        part = source[end:stop]
+        if part.strip():
+            if _mentions_product(part, cat):
+                clauses.append([end, stop, part.strip()])
+            elif clauses:
+                clauses[-1][1] = stop
+        end = boundary.end() if boundary else stop
+    out = []
+    current_customer = customer
+    ambiguous_correction = len(clauses) > 1 and re.search(
+        r"actually\s+make\s+it|correction\s*:|поправка\s*:|нет\s*,?\s*лучше", source, re.I)
+    for start, stop, first in clauses:
+        clause = source[start:stop].strip()
+        local_customer = _customer_field(clause, cat)
+        if local_customer:
+            current_customer = local_customer
+        local_due = _date_field(clause, today)
+        q, qq = _qty(clause)
+        quantity = _field(q, qq)
+        if ambiguous_correction:
+            quantity = {**_field(None, None), "note": "Which order does the correction change? / К какому заказу относится поправка?"}
+        out.append({"product": _field(first, first), "qty": quantity,
+                    "customer": current_customer or _field(None, None),
+                    "due_date": local_due or due or _field(None, None),
+                    "variant": _field(clause, clause), "line": clause})
     return out
 
 
 def _extract_offline(conn: sqlite3.Connection, source: str) -> list[dict]:
     cat = _catalog(conn)
-    return _table(source) or _text(source, cat, date.fromisoformat(domain.today(conn)))
+    table = _table(source)
+    return table if table is not None else _text(source, cat, date.fromisoformat(domain.today(conn)))
 
 
 # --- model extraction -----------------------------------------------------
@@ -322,13 +451,14 @@ def ground(conn: sqlite3.Connection, source: str, raw: dict, cat: dict, today: d
     def take(name):
         f = raw.get(name) or {}
         value, quote = f.get("value"), f.get("quote")
-        if quote and not _in_source(quote, source):
-            return None, None, "The quoted text is not in the source, so this field is left empty."
-        return value, quote, ""
+        if not _in_source(quote, source):
+            return None, None, f.get("note") or ("No source quote; check the field. / Нет цитаты из источника; проверьте поле."
+                                                 if value or quote else "")
+        return value, quote, f.get("note", "")
 
     # product
     value, quote, note = take("product")
-    pid, options = _match("product", value or quote or "", cat) if (value or quote) else (None, [])
+    pid, options = _match("product", quote or "", cat) if quote else (None, [])
     out["product"] = {"id": pid, "value": cat["product"].get(pid) if pid else (value or ""),
                       "quote": quote, "status": "ok" if pid else ("check" if options else "empty"),
                       "options": options, "note": note}
@@ -339,20 +469,21 @@ def ground(conn: sqlite3.Connection, source: str, raw: dict, cat: dict, today: d
         n = int(str(value).strip()) if value not in (None, "") else None
     except ValueError:
         n = None
-    if n and 0 < n <= 500 and quote:
+    quoted_qty, _ = _qty(quote or "")
+    if n and 0 < n <= 500 and quoted_qty == str(n):
         out["qty"] = {"id": n, "value": n, "quote": quote, "status": "ok", "options": [], "note": ""}
     else:
         out["qty"] = {"id": None, "value": n or 1, "quote": quote, "status": "check",
                       "options": [{"id": k, "label": str(k)} for k in (1, 2, 3)],
-                      "note": note or "The amount is not written; 1 is a guess."}
+                      "note": note or "Confirm the amount; the source is missing or unclear. / Подтвердите количество: оно не указано или неясно."}
 
     # customer
     value, quote, note = take("customer")
-    if value == STOCK or (quote and quote.lower() in STOCK_WORDS):
+    if quote and (quote.lower() in STOCK_WORDS or quote.lower() == STOCK):
         out["customer"] = {"id": STOCK, "value": "to stock", "quote": quote, "status": "ok",
                            "options": [], "note": ""}
     else:
-        cid, options = _match("customer", value or quote or "", cat) if (value or quote) \
+        cid, options = _match("customer", quote or "", cat) if quote \
             else (None, [])
         if cid:
             out["customer"] = {"id": cid, "value": cat["customer"][cid], "quote": quote,
@@ -368,34 +499,29 @@ def ground(conn: sqlite3.Connection, source: str, raw: dict, cat: dict, today: d
 
     # due date (optional)
     value, quote, note = take("due_date")
-    d = None
-    if value:
-        try:
-            d = date.fromisoformat(str(value))
-        except ValueError:
-            d = _parse_date(str(value), today)
-    if d is None and quote:
-        d = _parse_date(quote, today)
+    d = _parse_date(quote, today) if quote else None
     if d and today - timedelta(days=1) <= d <= today + timedelta(days=365):
         out["due_date"] = {"id": d.isoformat(), "value": d.isoformat(), "quote": quote,
                            "status": "ok", "options": [], "note": ""}
     elif value or quote:
         out["due_date"] = {"id": None, "value": str(value or quote), "quote": quote,
-                           "status": "check", "options": [], "note": "Date looks wrong; type it."}
+                           "status": "check", "options": [], "note": "Confirm the date; it is invalid or conflicting. / Подтвердите дату: она неверна или неоднозначна."}
     else:
         out["due_date"] = {"id": None, "value": "", "quote": None, "status": "empty",
                            "options": [], "note": note}
 
     # variant (optional, but a half-known fabric must be checked)
     value, quote, note = take("variant")
-    v = _variant(value or quote or "", cat) if (value or quote) else \
+    v = _variant(quote or "", cat) if quote else \
         {"fabric": None, "fabric_options": [], "frame": None}
+    if value and _variant(str(value), cat).get("needs_check"):
+        v["needs_check"] = True
     text = " · ".join(x for x in (v["fabric"], v["frame"]) if x)
-    if v["fabric_options"] and not v["fabric"]:
+    if (v["fabric_options"] and not v["fabric"]) or v.get("needs_check"):
         out["variant"] = {"id": None, "value": value or "", "quote": quote, "status": "check",
                           "options": [{"id": f + (" · " + v["frame"] if v["frame"] else ""),
                                        "label": f} for f in v["fabric_options"]],
-                          "note": "Which fabric exactly?"}
+                          "note": "Which fabric and frame exactly? / Уточните ткань и каркас."}
     else:
         out["variant"] = {"id": text, "value": text, "quote": quote,
                           "status": "ok" if text else "empty", "options": [], "note": note}
