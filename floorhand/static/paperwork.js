@@ -111,9 +111,16 @@
       b.querySelector("b").textContent = n;
       b.classList.toggle("hot", b.dataset.scope === "changed" && n > 0);
     });
-    const items = a.changed.map(c => `<li><span class="grow"><b>${esc(c.label)}</b> · ${
-      c.changes.map(x => `${esc(lang === "ru" ? x.field_ru : x.field)}: ${t("was")} ${esc(x.was ?? "—")}, ${t("now")} <b>${esc(x.now ?? "—")}</b>`).join("; ")
-    }</span></li>`).concat(a.cancelled_sheets.map(c => `<li><span class="grow warn"><b>${esc(c.label)}</b> · ${t("pull")}</span>
+    // One line per order and change: four poufs with the same new fabric are one problem.
+    const groups = new Map();
+    for (const c of a.changed) {
+      const what = c.changes.map(x => `${esc(lang === "ru" ? x.field_ru : x.field)}: ${t("was")} ${esc(x.was ?? "—")}, ${t("now")} <b>${esc(x.now ?? "—")}</b>`).join("; ");
+      const k = `${c.order_id}|${what}`;
+      if (!groups.has(k)) groups.set(k, { labels: [], what });
+      groups.get(k).labels.push(c.label);
+    }
+    const items = [...groups.values()].map(g => `<li><span class="grow"><b>${esc(g.labels.join(", "))}</b> · ${g.what}</span></li>`)
+      .concat(a.cancelled_sheets.map(c => `<li><span class="grow warn"><b>${esc(c.label)}</b> · ${t("pull")}</span>
       <button type="button" class="btn ghost" data-void="${c.unit_id}">${t("void")}</button></li>`));
     $("attention").innerHTML = items.join("") || `<li class="muted">${t("nothing")}</li>`;
     $("attention").querySelectorAll("[data-void]").forEach(b => b.onclick = () => act(b, async () => {

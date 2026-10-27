@@ -447,12 +447,26 @@ async function renderOrder(id) {
       <b>${esc(stageName(s))}</b> <span>${s.done}/${o.qty}</span>
       <small>${esc(s.people.join(", "))}</small></li>`).join("")}</ol>
     ${main}
+    <div class="row paper-links">
+      <button type="button" class="mid alt" id="printSheets">${t("printSheets")}</button>
+      <a class="mid alt" href="/paperwork/sheets/order/${o.id}" target="_blank" rel="noopener">${t("orderSheet")}</a>
+    </div>
     <details><summary>${t("history")} · ${o.history.length}</summary>
       <ul class="history">${o.history.map(h => `<li>${esc(h.created_at.replace("T", " ").slice(0, 16))} ·
         ${esc(state.lang === "ru" ? h.stage_ru : h.stage)}${o.qty > 1 ? ` · ${t("pc")} ${h.seq}` : ""} ·
         ${esc(h.person)}${h.kind === "undo" ? ` · <b>${t("undone")}</b>` : ""}</li>`).join("")}</ul>
     </details>`;
   document.getElementById("back").onclick = () => { state.order = null; renderOrders(); };
+  document.getElementById("printSheets").onclick = async () => {
+    // A first print gets copy 1; a repeat is refused with words until a reason is
+    // chosen on the Paperwork page, so no second paper sheet appears by accident.
+    const win = window.open("", "_blank");
+    const r = await api("/api/paperwork/sheets/print", { scope: "orders", order_ids: [o.id], idem_key: idem() });
+    if (r.silent) { if (win) win.close(); return; }
+    flash(r.ok, r.message);
+    if (!r.ok) { if (win) win.close(); return; }
+    if (win) win.location = `${r.url}?lang=${state.lang}`;
+  };
   const toShip = document.getElementById("toShip");
   if (toShip) toShip.onclick = () => {
     state.order = null; state.shipTo = o.customer_id; state.tab = "shipping"; render();
@@ -466,7 +480,8 @@ async function renderShipping() {
   if (!b.ok) { if (!b.silent) flash(false, b.message); return; }
   const cur = b.currency;
   $app.innerHTML = `
-    <header class="bar"><h1>${t("shipping")}</h1>${langSwitch()}</header>
+    <header class="bar"><h1>${t("shipping")}</h1>
+      <a href="/paperwork" target="_blank" rel="noopener">${t("paperwork")}</a>${langSwitch()}</header>
     <div class="split">
       <aside>
         <h2>${t("readyToShip")}</h2>
@@ -474,7 +489,7 @@ async function renderShipping() {
           data-cust="${c.customer_id}"><b>${esc(c.name)}</b> · ${c.ready} ${t("of")} ${c.open} ${t("readyWord")}</button></li>`).join("")
           || `<li class="muted">${t("nothingReady")}</li>`}</ul>
         <h2>${t("shippedToday")} · ${b.today.length}</h2>
-        <ul class="plain">${b.today.map(s => `<li><a href="/invoice/${s.id}" target="_blank">№${s.id}</a>
+        <ul class="plain">${b.today.map(s => `<li><a href="/paperwork/note/${s.id}?lang=${state.lang}" target="_blank">№${s.id}</a>
           ${esc(s.customer)} · ${money(cur, s.total)}</li>`).join("")}</ul>
         <h2>${t("owedToUs")} · ${b.debts.length} · ${money(cur, b.owed_total)}</h2>
         <ul class="plain">${b.debts.slice(0, 6).map(d => `<li>${esc(d.name)} · ${money(cur, d.owed)}</li>`).join("")}</ul>
@@ -532,7 +547,7 @@ async function renderShipPanel(customerId) {
     if (r.silent) { if (win) win.close(); return; }
     flash(r.ok, r.message);
     if (!r.ok) { if (win) win.close(); return; }
-    if (win) win.location = `/invoice/${r.shipment_id}`;
+    if (win) win.location = `/paperwork/note/${r.shipment_id}?autoprint=1&lang=${state.lang}`;
     renderShipping();
   };
 }

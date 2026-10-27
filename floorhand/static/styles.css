@@ -172,3 +172,7 @@ mark { background: #fde9a8; border-radius: 3px; padding: 0 2px; }
 .card.intake .opts { display: flex; flex-wrap: wrap; gap: 6px; }
 .card.intake input[type=date] { min-height: 44px; font: inherit; }
 small.quote { color: var(--muted); font-style: italic; }
+
+/* paperwork links on the order card */
+a.mid { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.paper-links { margin-top: 8px; }

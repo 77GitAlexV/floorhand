@@ -349,17 +349,40 @@ def units_for_scope(conn, scope: str, order_ids=None, unit_ids=None) -> list[int
 
 # --- printing -------------------------------------------------------------
 
-def _skip_reason(st: dict, reason: str | None) -> str | None:
+def _skip_reason(st: dict, reason: str | None) -> tuple[str, str] | None:
+    """(kind, words) when this item gets no new copy."""
     label = st["label"]
     if st["cancelled"]:
-        return f"{label} is cancelled: no sheet. Put it aside and tell the manager."
+        return "cancelled", f"{label} is cancelled: no sheet. Put it aside and tell the manager."
     if st["shipped"]:
-        return f"{label} has shipped: no sheet needed. See its delivery note."
+        return "shipped", f"{label} has shipped: no sheet needed. See its delivery note."
     if st["printed"] and not reason:
-        return (f"{label} already has a sheet (copy {st['latest_copy']}, printed "
-                f"{st['latest_printed_at'][:10]}). To print again pick a reason: "
-                "lost, damaged or order changed.")
+        return "printed", (f"{label} already has a sheet (copy {st['latest_copy']}, printed "
+                           f"{st['latest_printed_at'][:10]}). To print again pick a reason: "
+                           "lost, damaged or order changed.")
     return None
+
+
+SKIP_GROUPS = {  # one sentence for many items of the same kind
+    "cancelled": "{labels}: cancelled, no sheet. Put them aside and tell the manager.",
+    "shipped": "{labels}: already shipped, no sheet needed.",
+    "printed": "{labels} already have a sheet. To print again pick a reason: "
+               "lost, damaged or order changed.",
+}
+
+
+def _skips_in_words(skipped: list[dict]) -> str:
+    """Four poufs of one order are one sentence, not four."""
+    out = []
+    for kind in SKIP_GROUPS:
+        items = [s for s in skipped if s["kind"] == kind]
+        if len(items) == 1:
+            out.append(items[0]["why"])
+        elif items:
+            labels = ", ".join(s["label"] for s in items[:8]) + (
+                f" and {len(items) - 8} more" if len(items) > 8 else "")
+            out.append(SKIP_GROUPS[kind].format(labels=labels))
+    return " ".join(out)
 
 
 def _batch_receipt(conn, batch_id: int, skipped: list[dict]) -> dict:
@@ -369,9 +392,7 @@ def _batch_receipt(conn, batch_id: int, skipped: list[dict]) -> dict:
                                     "ORDER BY id", (batch_id,))]
     msg = f"Batch {batch_id}: {len(copies)} sheet(s) ready to print."
     if skipped:
-        msg += f" Skipped {len(skipped)}: " + " ".join(s["why"] for s in skipped[:5])
-        if len(skipped) > 5:
-            msg += f" …and {len(skipped) - 5} more."
+        msg += f" Skipped {len(skipped)}: " + _skips_in_words(skipped)
     return {"ok": True, "batch_id": batch_id, "already": False, "printed": len(copies),
             "copies": copies, "skipped": skipped, "message": msg,
             "url": f"/paperwork/sheets/batch/{batch_id}"}
@@ -399,9 +420,9 @@ def print_sheets(conn, person_id: int, *, scope: str, order_ids=None, unit_ids=N
         ready, skipped = [], []
         for uid in unit_list:
             st = st_all[uid]
-            why = _skip_reason(st, reason)
-            if why:
-                skipped.append({"unit_id": uid, "label": st["label"], "why": why})
+            skip = _skip_reason(st, reason)
+            if skip:
+                skipped.append({"unit_id": uid, "label": st["label"], "kind": skip[0], "why": skip[1]})
             else:
                 ready.append((uid, (st["latest_copy"] or 0) + 1))
         if not ready:
@@ -410,8 +431,7 @@ def print_sheets(conn, person_id: int, *, scope: str, order_ids=None, unit_ids=N
                                    "changed": "No sheet on the floor is out of date.",
                                    "today": "No live items from orders taken today."
                                    }.get(scope, "Nothing to print."))
-            raise DomainError(" ".join(s["why"] for s in skipped[:5])
-                              + (f" …and {len(skipped) - 5} more." if len(skipped) > 5 else ""))
+            raise DomainError(_skips_in_words(skipped))
         when = _stamp(conn)
         batch_reason = reason if any(copy > 1 for _, copy in ready) else None
         bid = conn.execute(
@@ -545,9 +565,11 @@ def attention(conn) -> dict:
             counts["today"] += st["order_created"][:10] == day and not st["printed"]
             if st["stale"] and not st["voided"]:
                 counts["changed"] += 1
-                changed.append({"unit_id": uid, "label": st["label"], "changes": st["changes"]})
+                changed.append({"unit_id": uid, "order_id": st["order_id"],
+                                "order_number": st["snapshot"]["order_number"],
+                                "label": st["label"], "changes": st["changes"]})
         if st["cancelled"] and st["printed"] and not st["voided"]:
-            cancelled.append({"unit_id": uid, "label": st["label"]})
+            cancelled.append({"unit_id": uid, "order_id": st["order_id"], "label": st["label"]})
     return {"never_printed": counts["new"], "changed": changed,
             "cancelled_with_live_sheet": [c["label"] for c in cancelled],
             "cancelled_sheets": cancelled, "counts": counts}
@@ -977,6 +999,7 @@ def seed(conn, rnd) -> None:
     batches: dict[str, int] = {}
     printed: list[int] = []
     stale_orders: dict[int, str] = {}  # order id -> what changed after print
+    old_fabric: dict[int, str] = {}
     rows = conn.execute("SELECT u.id, o.id AS oid, o.created_at FROM units u "
                         "JOIN orders o ON o.id = u.order_id ORDER BY o.created_at, u.id").fetchall()
     for row in rows:
@@ -996,12 +1019,14 @@ def seed(conn, rnd) -> None:
                 "INSERT INTO print_batches (created_at, created_by, scope) VALUES (?, ?, 'new')",
                 (when, manager)).lastrowid
         snap = snapshot(conn, uid)
-        if uid in live and (row["oid"] in stale_orders or len(stale_orders) < 2):
+        if uid in live and (row["oid"] in stale_orders
+                            or not stale_orders or (len(stale_orders) == 1 and snap["due_date"])):
             kind = stale_orders.setdefault(row["oid"], "fabric" if not stale_orders else "due")
             if kind == "fabric":  # the customer switched fabric after the sheet was printed
                 fabric, _, frame = snap["variant"].partition(" · ")
-                other = [f for f in fabrics if f != fabric] or ["linen sand"]
-                snap["variant"] = f"{rnd.choice(other)} · {frame}" if frame else rnd.choice(other)
+                if row["oid"] not in old_fabric:
+                    old_fabric[row["oid"]] = rnd.choice([f for f in fabrics if f != fabric] or ["linen sand"])
+                snap["variant"] = f"{old_fabric[row['oid']]} · {frame}" if frame else old_fabric[row["oid"]]
             elif snap["due_date"]:  # the customer moved the date
                 snap["due_date"] = (datetime.fromisoformat(snap["due_date"])
                                     + timedelta(days=4)).date().isoformat()

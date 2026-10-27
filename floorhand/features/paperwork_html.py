@@ -123,7 +123,7 @@ SHEET_CSS = """
 .qr{text-align:center;flex:none}
 .qr svg{width:var(--q);height:var(--q);display:block}
 .code{font:800 calc(14pt*var(--k)) ui-monospace,Consolas,monospace;letter-spacing:.06em;white-space:nowrap}
-.copyno{font-size:calc(8.5pt*var(--k))}
+.copyno{font-size:calc(9.5pt*var(--k));font-weight:700}
 .what{margin-top:2.5mm;font-weight:800;font-size:calc(17pt*var(--k));line-height:1.1}
 .variant{font-size:calc(13pt*var(--k));margin-top:.8mm}
 .for{display:flex;justify-content:space-between;align-items:baseline;gap:3mm;margin-top:2.5mm;
@@ -302,6 +302,7 @@ NOTE_CSS = """
 .to{margin:4mm 0 3mm;padding:2mm 0;border-top:.3mm solid #000;border-bottom:.3mm solid #000;font-size:11pt}
 table.lines{width:100%;border-collapse:collapse}
 .lines th{font-size:7.5pt;text-transform:uppercase;letter-spacing:.05em;text-align:left;border-bottom:.4mm solid #000;padding:1mm}
+.lines th.r{text-align:right}
 .lines td{border-bottom:.2mm solid #999;padding:1.2mm 1mm;vertical-align:top}
 .lines small{color:#444}
 .r{text-align:right;white-space:nowrap}

@@ -31,6 +31,7 @@ const STRINGS = {
     alreadyOwes: "Already owes", stillAt: "still at", total: "Total", payment: "Payment",
     p_paid: "Paid in full", p_credit: "On credit", p_partial: "Part paid", paidNow: "Paid now",
     shipAndPrint: "SHIP AND PRINT", readyWord: "ready", dueCol: "Due",
+    printSheets: "Print sheets", orderSheet: "Order sheet", paperwork: "Paperwork",
   },
   ru: {
     ok: "OK", who: "Кто работает?", tablet: "Общий планшет (без денег на экране)",
@@ -63,5 +64,6 @@ const STRINGS = {
     alreadyOwes: "Уже должен", stillAt: "ещё на", total: "Итого", payment: "Оплата",
     p_paid: "Всё оплачено", p_credit: "В долг", p_partial: "Часть", paidNow: "Оплачено сейчас",
     shipAndPrint: "ОТГРУЗИТЬ И НАПЕЧАТАТЬ", readyWord: "готово", dueCol: "Отдать к",
+    printSheets: "Напечатать листки", orderSheet: "Лист заказа", paperwork: "Документы",
   },
 };

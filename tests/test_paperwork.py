@@ -438,3 +438,13 @@ def test_attention_is_set_based(conn):
     p.attention(conn)
     conn.set_trace_callback(None)
     assert len(calls) < 20
+
+
+def test_skips_of_one_kind_are_one_sentence(conn):
+    oid = domain.create_order(conn, product_id=1, qty=3, customer_id=1, due_date=None,
+                              variant='fictional fabric', source='manual')
+    p.print_sheets(conn, manager(conn), scope='orders', order_ids=[oid])
+    with pytest.raises(domain.DomainError) as err:
+        p.print_sheets(conn, manager(conn), scope='orders', order_ids=[oid])
+    text = str(err.value)
+    assert text.count('pick a reason') == 1 and 'already have a sheet' in text
