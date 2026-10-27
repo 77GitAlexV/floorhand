@@ -25,7 +25,8 @@ def waiting_unit(conn, stage_code):
 
 
 def test_seed_has_a_living_shop(conn):
-    assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == seed.N_ORDERS
+    # feature seeds may add a little history of their own on top of the base shop
+    assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] >= seed.N_ORDERS
     assert conn.execute("SELECT COUNT(*) FROM work_events").fetchone()[0] > 500
     floor = domain.floor_overview(conn)
     assert [s["name_en"] for s in floor if s["bottleneck"]] == ["Upholstery"]
