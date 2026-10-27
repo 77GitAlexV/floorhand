@@ -79,10 +79,13 @@ async function render() {
   const worker = state.me.stage_id !== null;
   const tabs = worker
     ? (state.me.tablet ? ["work"] : ["work", "money", "me"])
-    : ["floor", "me"];
+    : state.me.role === "owner" ? ["floor", "orders", "shipping", "me"]
+      : ["orders", "shipping", "me"];
   if (!tabs.includes(state.tab)) state.tab = tabs[0];
+  document.body.classList.toggle("office", !worker);
   renderTabs(tabs);
-  ({ work: renderWork, money: renderMoney, me: renderMe, floor: renderFloor })[state.tab]();
+  ({ work: renderWork, money: renderMoney, me: renderMe, floor: renderFloor,
+     orders: renderOrders, shipping: renderShipping })[state.tab]();
 }
 
 function renderTabs(tabs) {
@@ -234,6 +237,180 @@ async function renderFloor() {
       <ul>${s.people.map(p => `<li>${esc(p.name)} <b>${p.today}</b></li>`).join("")}</ul>
     </section>`).join("")}</div>`;
   bindLang();
+}
+
+// --- office: orders ------------------------------------------------------
+
+const VIEWS = ["open", "in_work", "ready", "shipped", "all"];
+
+function stageLine(line) {
+  return `<span class="line">${line.map(s =>
+    `<span class="step ${s.state}" title="${esc(stageName(s))}: ${s.done}">${esc(stageName(s))}${
+      s.state === "active" && s.here ? ` ${s.here}` : ""}</span>`).join("")}</span>`;
+}
+
+function dueCell(o) {
+  if (!o.customer) return t("toStock");
+  return o.late_days ? `<b class="late">${esc(o.due_date)} · ${t("lateBy")} ${o.late_days} ${t("days")}</b>`
+    : esc(o.due_date || "—");
+}
+
+async function renderOrders() {
+  if (state.order) return renderOrder(state.order);
+  const view = state.view || "open";
+  const r = await api(`/api/orders?view=${view}&q=${encodeURIComponent(state.q || "")}`);
+  if (!r.ok) { if (!r.silent) flash(false, r.message); return; }
+  $app.innerHTML = `
+    <header class="bar"><h1>${t("orders")}</h1>${langSwitch()}</header>
+    <section class="new">
+      <h2>${t("newOrder")}</h2>
+      <div class="drop">${t("newOrderHint")}</div>
+    </section>
+    ${r.attention.length ? `<h2 class="hot">${t("attention")} · ${r.attention.length}</h2>
+      <ul class="attention">${r.attention.slice(0, 8).map(o => `<li><button type="button" class="row" data-order="${o.id}">
+        <b>#${o.number}</b> ${esc(o.product)} · ${esc(o.customer || t("toStock"))} ·
+        <b class="late">${t("lateBy")} ${o.late_days} ${t("days")}</b> · ${t("nowAt")} ${esc(nowAt(o.line))}</button></li>`).join("")}
+      ${r.attention.length > 8 ? `<li class="muted">+ ${r.attention.length - 8}</li>` : ""}</ul>` : ""}
+    <div class="filters">
+      <input id="q" type="search" placeholder="${t("search")}" value="${esc(state.q || "")}">
+      <div class="chips">${VIEWS.map(v =>
+        `<button type="button" class="chip ${v === view ? "on" : ""}" data-view="${v}">${t("v_" + v)}</button>`).join("")}</div>
+    </div>
+    <table class="orders"><thead><tr><th>№</th><th>${t("product")}</th><th>${t("customer")}</th>
+      <th>${t("whereNow")}</th><th>${t("dueCol")}</th></tr></thead>
+    <tbody>${r.orders.map(o => `<tr data-order="${o.id}">
+      <td><b>${o.number}</b></td>
+      <td>${esc(o.product)}${o.qty > 1 ? ` ×${o.qty}` : ""}<br><small>${esc(o.variant)}</small></td>
+      <td>${esc(o.customer || t("toStock"))}</td>
+      <td>${o.status === "shipped" ? t("s_shipped") : o.status === "ready" ? `<b>${t("s_ready")}</b>` : stageLine(o.line)}</td>
+      <td>${dueCell(o)}</td></tr>`).join("")}</tbody></table>
+    ${r.orders.length ? "" : `<p class="empty">${t("nothingFound")}</p>`}`;
+  bindLang();
+  $app.querySelectorAll("[data-order]").forEach(el => el.onclick = () => {
+    state.order = Number(el.dataset.order); renderOrders();
+  });
+  $app.querySelectorAll("[data-view]").forEach(b => b.onclick = () => {
+    state.view = b.dataset.view; renderOrders();
+  });
+  const q = document.getElementById("q");
+  q.oninput = () => {
+    clearTimeout(renderOrders.timer);
+    renderOrders.timer = setTimeout(async () => {
+      state.q = q.value; await renderOrders();
+      const again = document.getElementById("q");
+      again.focus(); again.setSelectionRange(again.value.length, again.value.length);
+    }, 250);
+  };
+}
+
+function nowAt(line) {
+  const active = line.filter(s => s.state === "active");
+  return active.length ? active.map(stageName).join(", ") : t("s_ready");
+}
+
+async function renderOrder(id) {
+  const o = await api(`/api/orders/${id}`);
+  if (!o.ok) { if (!o.silent) flash(false, o.message); state.order = null; return; }
+  const main = o.status === "ready" && o.customer_id
+    ? `<button type="button" class="big" id="toShip">${t("ship")}</button>` : "";
+  $app.innerHTML = `
+    <button type="button" class="back" id="back">← ${t("orders")}</button>
+    <header class="bar"><h1>#${o.number} ${esc(o.product)}${o.qty > 1 ? ` ×${o.qty}` : ""}</h1>
+      <span class="status s-${o.status}">${t("s_" + o.status)}</span></header>
+    <p class="big-facts">${esc(o.variant)}<br>
+      ${o.customer ? `${esc(o.customer)}, ${esc(o.city || "")} · ${t("due")} ${dueCell(o)}` : t("toStock")}</p>
+    <ol class="stages-line">${o.line.map(s => `<li class="${s.state}">
+      <b>${esc(stageName(s))}</b> <span>${s.done}/${o.qty}</span>
+      <small>${esc(s.people.join(", "))}</small></li>`).join("")}</ol>
+    ${main}
+    <details><summary>${t("history")} · ${o.history.length}</summary>
+      <ul class="history">${o.history.map(h => `<li>${esc(h.created_at.replace("T", " ").slice(0, 16))} ·
+        ${esc(state.lang === "ru" ? h.stage_ru : h.stage)}${o.qty > 1 ? ` · ${t("pc")} ${h.seq}` : ""} ·
+        ${esc(h.person)}${h.kind === "undo" ? ` · <b>${t("undone")}</b>` : ""}</li>`).join("")}</ul>
+    </details>`;
+  document.getElementById("back").onclick = () => { state.order = null; renderOrders(); };
+  const toShip = document.getElementById("toShip");
+  if (toShip) toShip.onclick = () => {
+    state.order = null; state.shipTo = o.customer_id; state.tab = "shipping"; render();
+  };
+}
+
+// --- office: shipping ----------------------------------------------------
+
+async function renderShipping() {
+  const b = await api("/api/shipping");
+  if (!b.ok) { if (!b.silent) flash(false, b.message); return; }
+  const cur = b.currency;
+  $app.innerHTML = `
+    <header class="bar"><h1>${t("shipping")}</h1>${langSwitch()}</header>
+    <div class="split">
+      <aside>
+        <h2>${t("readyToShip")}</h2>
+        <ul class="pick">${b.ready.map(c => `<li><button type="button" class="row ${c.customer_id === state.shipTo ? "on" : ""}"
+          data-cust="${c.customer_id}"><b>${esc(c.name)}</b> · ${c.ready} ${t("of")} ${c.open} ${t("readyWord")}</button></li>`).join("")
+          || `<li class="muted">${t("nothingReady")}</li>`}</ul>
+        <h2>${t("shippedToday")} · ${b.today.length}</h2>
+        <ul class="plain">${b.today.map(s => `<li><a href="/invoice/${s.id}" target="_blank">№${s.id}</a>
+          ${esc(s.customer)} · ${money(cur, s.total)}</li>`).join("")}</ul>
+        <h2>${t("owedToUs")} · ${b.debts.length} · ${money(cur, b.owed_total)}</h2>
+        <ul class="plain">${b.debts.slice(0, 6).map(d => `<li>${esc(d.name)} · ${money(cur, d.owed)}</li>`).join("")}</ul>
+      </aside>
+      <section id="shipPanel" class="panel"><p class="empty">${t("pickCustomer")}</p></section>
+    </div>`;
+  bindLang();
+  $app.querySelectorAll("[data-cust]").forEach(el => el.onclick = () => {
+    state.shipTo = Number(el.dataset.cust); renderShipping();
+  });
+  if (state.shipTo) renderShipPanel(state.shipTo);
+}
+
+async function renderShipPanel(customerId) {
+  const c = await api(`/api/shipping/${customerId}`);
+  const panel = document.getElementById("shipPanel");
+  if (!c.ok) { if (!c.silent) flash(false, c.message); return; }
+  const cur = c.currency;
+  let payment = null;
+  panel.innerHTML = `
+    <h2>${esc(c.name)}, ${esc(c.city || "")}</h2>
+    ${c.owed ? `<p class="late">${t("alreadyOwes")} ${money(cur, c.owed)}</p>` : ""}
+    <ul class="items">${c.items.map(i => `<li class="${i.ready ? "" : "notready"}">
+      <label><input type="checkbox" data-unit="${i.unit_id}" data-price="${i.price}" ${i.ready ? "checked" : "disabled"}>
+      <b>${esc(i.label)}</b> ${esc(i.product)}</label>
+      <span>${i.ready ? money(cur, i.price) : `${t("stillAt")} ${esc(state.lang === "ru" ? i.at_ru : i.at)}`}</span></li>`).join("")}</ul>
+    <p class="sum">${t("total")}: <b id="total"></b></p>
+    <p>${t("payment")}:</p>
+    <div class="row">${["paid", "credit", "partial"].map(p =>
+      `<button type="button" class="mid alt" data-pay="${p}">${t("p_" + p)}</button>`).join("")}</div>
+    <label id="partialBox" hidden>${t("paidNow")} <input id="paidAmount" type="number" min="0" inputmode="numeric"></label>
+    <button type="button" class="big" id="doShip" disabled>${t("shipAndPrint")}</button>`;
+  const boxes = [...panel.querySelectorAll("[data-unit]")];
+  const update = () => {
+    const picked = boxes.filter(x => x.checked);
+    document.getElementById("total").textContent =
+      money(cur, picked.reduce((s, x) => s + Number(x.dataset.price), 0));
+    document.getElementById("doShip").disabled = !picked.length || !payment;
+  };
+  boxes.forEach(x => x.onchange = update);
+  panel.querySelectorAll("[data-pay]").forEach(btn => btn.onclick = () => {
+    payment = btn.dataset.pay;
+    panel.querySelectorAll("[data-pay]").forEach(x => x.classList.toggle("on", x === btn));
+    document.getElementById("partialBox").hidden = payment !== "partial";
+    update();
+  });
+  update();
+  document.getElementById("doShip").onclick = async () => {
+    const win = window.open("", "_blank");  // opened inside the click, so it is not blocked
+    const r = await api("/api/ship", {
+      customer_id: customerId, payment,
+      unit_ids: boxes.filter(x => x.checked).map(x => Number(x.dataset.unit)),
+      paid_amount: Number(document.getElementById("paidAmount").value || 0),
+    });
+    if (r.silent) { if (win) win.close(); return; }
+    flash(r.ok, r.message);
+    if (!r.ok) { if (win) win.close(); return; }
+    if (win) win.location = `/invoice/${r.shipment_id}`;
+    renderShipping();
+  };
 }
 
 async function signOut() {

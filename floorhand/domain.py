@@ -424,6 +424,8 @@ def ship(conn: sqlite3.Connection, person_id: int, customer_id: int,
         raise DomainError("Only the office can ship.")
     if not unit_ids:
         raise DomainError("Pick at least one item to ship.")
+    if len(set(unit_ids)) != len(unit_ids):
+        raise DomainError("The same item is picked twice.")
     if payment not in ("paid", "credit", "partial"):
         raise DomainError("Payment must be paid, credit or partial.")
     prices = []
@@ -457,3 +459,195 @@ def ship(conn: sqlite3.Connection, person_id: int, customer_id: int,
     conn.execute("UPDATE shipments SET paid_amount = ? WHERE id = ?", (paid, sid))
     conn.commit()
     return sid
+
+
+# --- office: orders -------------------------------------------------------
+
+def _order_progress(conn: sqlite3.Connection) -> tuple[dict, dict]:
+    """(order_id -> {stage_id: units done}, order_id -> units shipped)."""
+    done: dict[int, dict[int, int]] = {}
+    for r in conn.execute(f"SELECT u.order_id, e.stage_id, COUNT(*) AS n FROM ({LIVE_DONE}) e "
+                          "JOIN units u ON u.id = e.unit_id GROUP BY u.order_id, e.stage_id"):
+        done.setdefault(r["order_id"], {})[r["stage_id"]] = r["n"]
+    shipped = {r["order_id"]: r["n"] for r in conn.execute(
+        "SELECT u.order_id, COUNT(*) AS n FROM shipment_lines sl "
+        "JOIN units u ON u.id = sl.unit_id GROUP BY u.order_id")}
+    return done, shipped
+
+
+def _summarize(order: sqlite3.Row, st: list, done: dict, shipped: int, day: str) -> dict:
+    qty = order["qty"]
+    line = []
+    before = qty  # units that have passed the previous stage
+    for s in st:
+        n = done.get(s["id"], 0)
+        line.append({"stage_id": s["id"], "name_en": s["name_en"], "name_ru": s["name_ru"],
+                     "done": n, "here": before - n,
+                     "state": "done" if n == qty else ("active" if before - n else "todo")})
+        before = n
+    finished = done.get(st[-1]["id"], 0)
+    if order["cancelled"]:
+        status = "cancelled"
+    elif shipped == qty:
+        status = "shipped"
+    elif finished == qty:
+        status = "ready"
+    elif any(done.values()):
+        status = "in_work"
+    else:
+        status = "accepted"
+    due = order["due_date"]
+    late_days = 0
+    if due and status not in ("shipped", "cancelled", "ready") and due < day:
+        late_days = (date.fromisoformat(day) - date.fromisoformat(due)).days
+    return {"status": status, "line": line, "finished": finished, "shipped": shipped,
+            "late_days": late_days}
+
+
+def orders_list(conn: sqlite3.Connection, q: str = "", view: str = "open") -> dict:
+    """Orders table plus the 'needs attention' block for the manager."""
+    st = stages(conn)
+    day = today(conn)
+    done, shipped = _order_progress(conn)
+    rows = conn.execute(
+        "SELECT o.*, p.name AS product, c.name AS customer, c.city FROM orders o "
+        "JOIN products p ON p.id = o.product_id LEFT JOIN customers c ON c.id = o.customer_id "
+        "ORDER BY o.number DESC").fetchall()
+    needle = q.strip().lower().lstrip("#")
+    out, attention = [], []
+    for o in rows:
+        info = _summarize(o, st, done.get(o["id"], {}), shipped.get(o["id"], 0), day)
+        item = {"id": o["id"], "number": o["number"], "product": o["product"],
+                "variant": o["variant"], "qty": o["qty"], "customer": o["customer"],
+                "city": o["city"], "due_date": o["due_date"], "source": o["source"], **info}
+        if info["late_days"]:
+            attention.append({**item, "reason": "late"})
+        if needle and needle not in " ".join(
+                str(v).lower() for v in (o["number"], o["product"], o["customer"], o["variant"])):
+            continue
+        if view == "open" and info["status"] in ("shipped", "cancelled"):
+            continue
+        if view in ("in_work", "ready", "shipped") and info["status"] != view:
+            continue
+        out.append(item)
+    attention.sort(key=lambda x: -x["late_days"])
+    return {"date": day, "orders": out, "attention": attention}
+
+
+def order_detail(conn: sqlite3.Connection, order_id: int) -> dict:
+    o = conn.execute(
+        "SELECT o.*, p.name AS product, p.price, c.name AS customer, c.city FROM orders o "
+        "JOIN products p ON p.id = o.product_id LEFT JOIN customers c ON c.id = o.customer_id "
+        "WHERE o.id = ?", (order_id,)).fetchone()
+    if o is None:
+        raise DomainError("No such order.")
+    st = stages(conn)
+    done, shipped = _order_progress(conn)
+    info = _summarize(o, st, done.get(order_id, {}), shipped.get(order_id, 0), today(conn))
+    who: dict[int, list[str]] = {}
+    for r in conn.execute(f"SELECT e.stage_id, p.name FROM ({LIVE_DONE}) e "
+                          "JOIN units u ON u.id = e.unit_id JOIN people p ON p.id = e.person_id "
+                          "WHERE u.order_id = ? ORDER BY e.id", (order_id,)):
+        names = who.setdefault(r["stage_id"], [])
+        if r["name"] not in names:
+            names.append(r["name"])
+    for step in info["line"]:
+        step["people"] = who.get(step["stage_id"], [])
+    history = [dict(r) for r in conn.execute(
+        "SELECT e.kind, e.created_at, e.method, s.name_en AS stage, s.name_ru AS stage_ru, "
+        "p.name AS person, u.seq FROM work_events e JOIN units u ON u.id = e.unit_id "
+        "JOIN stages s ON s.id = e.stage_id JOIN people p ON p.id = e.person_id "
+        "WHERE u.order_id = ? ORDER BY e.id DESC", (order_id,))]
+    return {"id": o["id"], "number": o["number"], "product": o["product"],
+            "variant": o["variant"], "qty": o["qty"], "price": o["price"],
+            "customer": o["customer"], "customer_id": o["customer_id"], "city": o["city"],
+            "due_date": o["due_date"], "source": o["source"], "created_at": o["created_at"],
+            "currency": currency(conn), **info, "history": history}
+
+
+# --- office: shipping -----------------------------------------------------
+
+def _debts(conn: sqlite3.Connection) -> dict[int, int]:
+    out: dict[int, int] = {}
+    for sh in conn.execute("SELECT id, customer_id, paid_amount FROM shipments"):
+        owed = shipment_total(conn, sh["id"]) - sh["paid_amount"]
+        if owed:
+            out[sh["customer_id"]] = out.get(sh["customer_id"], 0) + owed
+    return out
+
+
+def shipping_board(conn: sqlite3.Connection) -> dict:
+    """Left side of the shipping screen: who has something ready, today, debts."""
+    last = stages(conn)[-1]["id"]
+    done_units = {r["unit_id"] for r in conn.execute(
+        f"SELECT unit_id FROM ({LIVE_DONE}) WHERE stage_id = ?", (last,))}
+    shipped = {r["unit_id"] for r in conn.execute("SELECT unit_id FROM shipment_lines")}
+    customers: dict[int, dict] = {}
+    for r in conn.execute("SELECT u.id, o.customer_id, c.name, c.city FROM units u "
+                          "JOIN orders o ON o.id = u.order_id "
+                          "JOIN customers c ON c.id = o.customer_id WHERE o.cancelled = 0"):
+        if r["id"] in shipped:
+            continue
+        c = customers.setdefault(r["customer_id"], {"customer_id": r["customer_id"],
+                                                    "name": r["name"], "city": r["city"],
+                                                    "ready": 0, "open": 0})
+        c["open"] += 1
+        c["ready"] += r["id"] in done_units
+    ready = sorted((c for c in customers.values() if c["ready"]),
+                   key=lambda c: (c["ready"] != c["open"], -c["ready"]))
+    day = today(conn)
+    today_rows = conn.execute(
+        "SELECT s.id, c.name FROM shipments s JOIN customers c ON c.id = s.customer_id "
+        "WHERE substr(s.created_at, 1, 10) = ? ORDER BY s.id", (day,)).fetchall()
+    debts = _debts(conn)
+    names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM customers")}
+    return {"currency": currency(conn), "ready": ready,
+            "today": [{"id": r["id"], "customer": r["name"],
+                       "total": shipment_total(conn, r["id"])} for r in today_rows],
+            "debts": sorted(({"customer_id": k, "name": names[k], "owed": v}
+                             for k, v in debts.items()), key=lambda d: -d["owed"]),
+            "owed_total": sum(debts.values())}
+
+
+def customer_shipping(conn: sqlite3.Connection, customer_id: int) -> dict:
+    """Right side: this customer's open items, ready ones first, others with why."""
+    c = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+    if c is None:
+        raise DomainError("No such customer.")
+    items = []
+    for u in conn.execute(
+            "SELECT u.id, p.price, p.name AS product FROM units u "
+            "JOIN orders o ON o.id = u.order_id JOIN products p ON p.id = o.product_id "
+            "WHERE o.customer_id = ? AND o.cancelled = 0 ORDER BY o.number, u.seq",
+            (customer_id,)):
+        if is_shipped(conn, u["id"]):
+            continue
+        cs = current_stage(conn, u["id"])
+        items.append({"unit_id": u["id"], "label": unit_label(conn, u["id"]),
+                      "product": u["product"], "price": u["price"], "ready": cs is None,
+                      "at": None if cs is None else cs["name_en"],
+                      "at_ru": None if cs is None else cs["name_ru"]})
+    items.sort(key=lambda i: not i["ready"])
+    return {"customer_id": c["id"], "name": c["name"], "city": c["city"],
+            "currency": currency(conn), "items": items,
+            "owed": _debts(conn).get(customer_id, 0)}
+
+
+def invoice(conn: sqlite3.Connection, shipment_id: int) -> dict:
+    sh = conn.execute("SELECT s.*, c.name AS customer, c.city FROM shipments s "
+                      "JOIN customers c ON c.id = s.customer_id WHERE s.id = ?",
+                      (shipment_id,)).fetchone()
+    if sh is None:
+        raise DomainError("No such shipment.")
+    lines = [{"label": unit_label(conn, r["unit_id"]), "product": r["product"],
+              "variant": r["variant"], "price": r["price"]} for r in conn.execute(
+        "SELECT sl.unit_id, sl.price, p.name AS product, o.variant FROM shipment_lines sl "
+        "JOIN units u ON u.id = sl.unit_id JOIN orders o ON o.id = u.order_id "
+        "JOIN products p ON p.id = o.product_id WHERE sl.shipment_id = ? "
+        "ORDER BY o.number, u.seq", (shipment_id,))]
+    total = shipment_total(conn, shipment_id)
+    shop = conn.execute("SELECT value FROM settings WHERE key = 'shop_name'").fetchone()
+    return {"id": sh["id"], "date": sh["created_at"][:10], "customer": sh["customer"],
+            "city": sh["city"], "payment": sh["payment"], "paid": sh["paid_amount"],
+            "total": total, "owed": total - sh["paid_amount"], "lines": lines,
+            "currency": currency(conn), "shop": shop["value"] if shop else ""}

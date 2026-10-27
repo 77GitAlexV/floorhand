@@ -101,3 +101,58 @@ ul.bars .v { text-align: right; }
 .stage.hot { background: var(--hot); border-color: var(--bad); }
 .stage p { margin: 4px 0; }
 .stage ul { list-style: none; padding: 0; margin: 8px 0 0; color: var(--muted); }
+
+/* --- office ---------------------------------------------------------- */
+body.office main { max-width: 1100px; }
+body.office { padding-bottom: 80px; }
+.new .drop {
+  border: 2px dashed var(--line); border-radius: 12px; padding: 18px; color: var(--muted);
+  background: var(--card);
+}
+h2.hot { color: var(--bad); }
+.late { color: var(--bad); }
+.muted { color: var(--muted); }
+ul.attention, ul.pick, ul.plain, ul.items, ul.history { list-style: none; padding: 0; margin: 0; }
+.row-btn, button.row {
+  display: block; width: 100%; text-align: left; min-height: 48px; padding: 8px 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin: 6px 0;
+}
+button.row.on { border: 2px solid var(--accent); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0 8px; }
+.filters input { flex: 1 1 280px; min-height: 48px; font: inherit; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 44px; padding: 0 14px; border: 1px solid var(--line); background: var(--card); border-radius: 22px; }
+.chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+table.orders { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; }
+table.orders th, table.orders td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.orders th { color: var(--muted); font-weight: 600; font-size: .85em; }
+table.orders tbody tr { cursor: pointer; }
+table.orders tbody tr:hover { background: var(--bg); }
+table.orders small { color: var(--muted); }
+.line { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.step { font-size: .8em; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+.step.done { background: #e3efe8; color: var(--good); border-color: #e3efe8; }
+.step.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+.back { min-height: 44px; border: 0; background: none; color: var(--accent); padding: 0; }
+.status { padding: 4px 12px; border-radius: 14px; background: var(--line); }
+.status.s-ready { background: var(--accent); color: #fff; }
+.status.s-shipped { background: #e3efe8; color: var(--good); }
+.big-facts { font-size: 1.15em; }
+ol.stages-line { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+ol.stages-line li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; }
+ol.stages-line li.done { border-color: var(--good); }
+ol.stages-line li.active { border: 2px solid var(--accent); }
+ol.stages-line small { color: var(--muted); }
+ul.history li { padding: 6px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+.split { display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; gap: 16px; align-items: start; }
+@media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+ul.items li { display: flex; justify-content: space-between; gap: 8px; align-items: center; min-height: 48px; border-bottom: 1px solid var(--line); }
+ul.items li.notready { color: var(--muted); }
+ul.items input { width: 24px; height: 24px; vertical-align: middle; margin-right: 8px; }
+.mid.alt { background: var(--card); color: var(--ink); border: 2px solid var(--line); }
+.mid.alt.on { border-color: var(--accent); background: #e3efe8; outline: none; }
+#partialBox { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+#partialBox[hidden] { display: none; }
+#partialBox input { min-height: 48px; font: inherit; width: 140px; padding: 0 8px; }
+ul.plain li { padding: 4px 0; }

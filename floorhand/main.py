@@ -1,10 +1,11 @@
 """HTTP API and static files. Run: uvicorn floorhand.main:app --reload"""
 import secrets
+from html import escape as esc
 from pathlib import Path
 from typing import Iterator
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -15,6 +16,9 @@ STATIC = Path(__file__).resolve().parent / "static"
 COOKIE = "fh_session"
 
 app = FastAPI(title="Floorhand")
+_conn = db.connect()
+db.init(_conn)  # new tables appear in an existing demo database
+_conn.close()
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
@@ -172,3 +176,66 @@ def money(s: Session = Depends(worker), conn=Depends(get_conn)) -> dict:
 @app.get("/api/floor")
 def floor(s: Session = Depends(office), conn=Depends(get_conn)) -> list[dict]:
     return domain.floor_overview(conn)
+
+
+@app.get("/api/orders")
+def orders(q: str = "", view: str = "open", s: Session = Depends(office),
+           conn=Depends(get_conn)) -> dict:
+    return domain.orders_list(conn, q, view)
+
+
+@app.get("/api/orders/{order_id}")
+def order(order_id: int, s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
+    return domain.order_detail(conn, order_id)
+
+
+@app.get("/api/shipping")
+def shipping(s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
+    return domain.shipping_board(conn)
+
+
+@app.get("/api/shipping/{customer_id}")
+def shipping_customer(customer_id: int, s: Session = Depends(office),
+                      conn=Depends(get_conn)) -> dict:
+    return domain.customer_shipping(conn, customer_id)
+
+
+class ShipIn(BaseModel):
+    customer_id: int
+    unit_ids: list[int]
+    payment: str
+    paid_amount: int = 0
+
+
+@app.post("/api/ship")
+def ship(body: ShipIn, s: Session = Depends(office), conn=Depends(get_conn)) -> dict:
+    sid = domain.ship(conn, s.person_id, body.customer_id, body.unit_ids, body.payment,
+                      body.paid_amount)
+    inv = domain.invoice(conn, sid)
+    return {"ok": True, "shipment_id": sid, "total": inv["total"],
+            "message": f"Shipped {len(inv['lines'])} pc(s) to {inv['customer']}, "
+                       f"{inv['currency']}{inv['total']}."}
+
+
+@app.get("/invoice/{shipment_id}", response_class=HTMLResponse)
+def invoice_page(shipment_id: int, s: Session = Depends(office),
+                 conn=Depends(get_conn)) -> str:
+    inv = domain.invoice(conn, shipment_id)
+    cur = inv["currency"]
+    rows = "".join(
+        f"<tr><td>{esc(l['label'])}</td><td>{esc(l['product'])}<br><small>{esc(l['variant'])}"
+        f"</small></td><td class=n>{cur}{l['price']}</td></tr>" for l in inv["lines"])
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Invoice {inv['id']}</title><style>
+body{{font:16px/1.4 system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#1d1d1b}}
+table{{width:100%;border-collapse:collapse}}td,th{{border-bottom:1px solid #ccc;padding:8px;text-align:left}}
+.n{{text-align:right;font-variant-numeric:tabular-nums}}@media print{{button{{display:none}}}}
+</style></head><body>
+<h1>{esc(inv['shop'])} — delivery note №{inv['id']}</h1>
+<p>{esc(inv['date'])} · To: <b>{esc(inv['customer'])}</b>, {esc(inv['city'] or '')}</p>
+<table><tr><th>Item</th><th>Product</th><th class=n>Price</th></tr>{rows}
+<tr><th colspan=2>Total</th><th class=n>{cur}{inv['total']}</th></tr>
+<tr><td colspan=2>Paid</td><td class=n>{cur}{inv['paid']}</td></tr>
+<tr><td colspan=2>Owed</td><td class=n>{cur}{inv['owed']}</td></tr></table>
+<p><button onclick="print()">Print</button></p>
+<script>addEventListener('load', () => print())</script></body></html>"""

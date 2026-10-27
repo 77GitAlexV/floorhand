@@ -16,7 +16,7 @@ CURRENCY = "$"
 STAGES = [  # code, en, ru, capacity per working day
     ("cut", "Cutting", "Раскрой", 30),
     ("sew", "Sewing", "Шитьё", 26),
-    ("uph", "Upholstery", "Обивка", 18),
+    ("uph", "Upholstery", "Обивка", 21),
     ("asm", "Assembly", "Сборка", 24),
     ("pack", "Packing", "Упаковка", 30),
 ]
@@ -119,7 +119,7 @@ def build(conn, rnd: random.Random | None = None, today: date | None = None) -> 
             rnd.choice([1, 1, 1, 1, 2])
         to_stock = rnd.random() < 0.15
         cust = None if to_stock else rnd.choice(customer_ids)
-        due = None if to_stock else (d + timedelta(days=rnd.randint(7, 13))).isoformat()
+        due = None if to_stock else (d + timedelta(days=rnd.randint(5, 11))).isoformat()
         variant = f"{rnd.choice(FABRICS)} · {rnd.choice(FRAMES)}"
         created = datetime.combine(d, time(rnd.randint(8, 17), rnd.randint(0, 59)), tz)
         oid = conn.execute(
@@ -147,9 +147,10 @@ def build(conn, rnd: random.Random | None = None, today: date | None = None) -> 
         # Later stages first, so a unit moves at most one stage per day.
         for idx in reversed(range(len(stage_order))):
             sid = stage_order[idx]
+            # Roughly first come, first served: a real floor does not sort by due date.
             queue = sorted((u for u in open_units
                             if unit_info[u]["stage"] == idx and unit_info[u]["moved_on"] != d),
-                           key=lambda u: (unit_info[u]["due"], u))
+                           key=lambda u: u + rnd.randint(0, 40))
             for uid in queue[:int(caps[sid] * share)]:
                 who = rnd.choice(workers_by_stage[sid])
                 at = datetime.combine(d, time(rnd.randint(8, 16), rnd.randint(0, 59)), tz)

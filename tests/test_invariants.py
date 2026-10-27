@@ -127,3 +127,32 @@ def test_api_needs_session_and_tablet_hides_money(tmp_path, monkeypatch):
 
     client.post("/api/login", json={"person_id": worker, "tablet": False})
     assert client.get("/api/work").json()["today"]["money"] is not None
+
+
+def test_order_status_is_derived_and_late_orders_surface(conn):
+    r = domain.orders_list(conn, view="all")
+    statuses = {o["status"] for o in r["orders"]}
+    assert {"shipped", "in_work", "ready"} <= statuses
+    for o in r["attention"]:
+        assert o["late_days"] > 0 and o["status"] not in ("shipped", "ready")
+    for o in r["orders"]:
+        line = o["line"]
+        assert sum(s["here"] for s in line) + o["finished"] == o["qty"]
+
+
+def test_ship_flow_and_invoice_total(conn):
+    board = domain.shipping_board(conn)
+    cust = board["ready"][0]["customer_id"]
+    panel = domain.customer_shipping(conn, cust)
+    ready = [i["unit_id"] for i in panel["items"] if i["ready"]]
+    manager = conn.execute("SELECT id FROM people WHERE role = 'manager'").fetchone()[0]
+    with pytest.raises(DomainError, match="twice"):
+        domain.ship(conn, manager, cust, [ready[0], ready[0]], "paid")
+    sid = domain.ship(conn, manager, cust, ready, "credit")
+    inv = domain.invoice(conn, sid)
+    assert inv["total"] == sum(i["price"] for i in panel["items"] if i["ready"])
+    assert inv["owed"] == inv["total"]
+    assert all(not i["ready"] for i in domain.customer_shipping(conn, cust)["items"])
+    worker = conn.execute("SELECT id FROM people WHERE role = 'worker' LIMIT 1").fetchone()[0]
+    with pytest.raises(DomainError, match="office"):
+        domain.ship(conn, worker, cust, ready, "paid")
