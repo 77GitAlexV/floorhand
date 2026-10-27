@@ -11,3 +11,5 @@ import "./paperwork.js"; // office: order sheets, delivery notes, outbox
 import "./stock.js";     // office: materials, shortages, receipts
 import "./inbox.js";     // office: from the floor (claims, signals, late marks)
 import "./me.js";        // everyone: language, text size, theme, sign out
+import "./handsfree.js";
+import "./gate.js";

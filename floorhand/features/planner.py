@@ -76,6 +76,8 @@ class Unit:
 
 def open_units(conn: sqlite3.Connection, today: date) -> list[Unit]:
     st = domain.stages(conn)
+    from .gate import held_orders
+    held = held_orders(conn)
     seq = {s["id"]: i for i, s in enumerate(st)}
     done: dict[int, dict[int, str]] = {}
     for r in conn.execute(f"SELECT unit_id, stage_id, work_date FROM ({LIVE_DONE})"):
@@ -97,6 +99,8 @@ def open_units(conn: sqlite3.Connection, today: date) -> list[Unit]:
         if cur is None:
             continue
         idx = seq[cur["id"]]
+        if idx == 0 and u['order_id'] in held:
+            continue
         last = max((v for k, v in d.items()), default=u["created_at"][:10])
         label = f"#{u['number']}" if u["qty"] == 1 else f"#{u['number']}-{u['seq']}"
         unit = Unit(id=u["id"], order_id=u["order_id"], number=u["number"], label=label,

@@ -30,6 +30,8 @@ def shop(tmp_path, monkeypatch):
     with closing(db.connect(path)) as conn:
         db.init(conn)
         conn.execute("INSERT INTO settings VALUES ('tz', 'Asia/Bangkok')")
+        # The simulator's existing Demo variant is a declared fictional fabric.
+        conn.execute("INSERT INTO settings VALUES ('fabrics', '[\"Demo\"]')")
         for i, en, ru in ((1, "Demo cutting", "Демо раскрой"),
                           (2, "Demo sewing", "Демо шитьё"),
                           (3, "Demo packing", "Демо упаковка")):

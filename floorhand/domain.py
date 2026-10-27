@@ -164,6 +164,10 @@ def mark_done(conn: sqlite3.Connection, person_id: int, unit_id: int, *,
             f"{label} is still at {cur['name_en']}. It reaches {my_stage['name_en']} "
             f"after {cur['name_en']} marks it done.")
 
+    if my_stage['seq'] == stages(conn)[0]['seq']:
+        from .features.gate import assert_start
+        assert_start(conn, order['id'], who['lang'])
+
     when = now(conn)
     cur_ev = conn.execute(
         "INSERT INTO work_events (kind, unit_id, stage_id, person_id, work_date, "
@@ -257,12 +261,16 @@ def _waiting_units(conn: sqlite3.Connection) -> dict[int, list[int]]:
     for r in conn.execute(f"SELECT unit_id, stage_id FROM ({LIVE_DONE})"):
         done_by_unit.setdefault(r["unit_id"], set()).add(r["stage_id"])
     shipped = {r["unit_id"] for r in conn.execute("SELECT unit_id FROM shipment_lines")}
+    from .features.gate import held_orders
+    held = held_orders(conn)
     out: dict[int, list[int]] = {s["id"]: [] for s in st}
-    for u in conn.execute("SELECT u.id FROM units u JOIN orders o ON o.id = u.order_id "
+    for u in conn.execute("SELECT u.id, o.id AS order_id FROM units u JOIN orders o ON o.id = u.order_id "
                           "WHERE o.cancelled = 0 ORDER BY o.due_date, o.number, u.seq"):
         if u["id"] in shipped:
             continue
         done = done_by_unit.get(u["id"], set())
+        if not done and u['order_id'] in held:
+            continue
         for s in st:
             if s["id"] not in done:
                 out[s["id"]].append(u["id"])

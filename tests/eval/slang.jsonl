@@ -1,0 +1,48 @@
+{"text":"assembled two harbors on curved legs","lang":"en","style":"starter","product":"Harbor armchair","qty":2,"stage":"asm","option":"curved legs"}
+{"text":"собрал два харбора на кривых ногах","lang":"ru","style":"starter","product":"Harbor armchair","qty":2,"stage":"asm","option":"curved legs"}
+{"text":"three seat cushions for harbor","lang":"en","style":"starter","product":"Harbor armchair","qty":3,"stage":"sew","component":"seat cushions"}
+{"text":"три сидушки на харбор","lang":"ru","style":"starter","product":"Harbor armchair","qty":3,"stage":"sew","component":"seat cushions"}
+{"text":"cut two cozy","lang":"en","style":"starter","product":"Cozy armchair","qty":2,"stage":"cut"}
+{"text":"раскроил два кози","lang":"ru","style":"starter","product":"Cozy armchair","qty":2,"stage":"cut"}
+{"text":"sewn one harbor rocker","lang":"en","style":"starter","product":"Harbor rocking chair","qty":1,"stage":"sew"}
+{"text":"сшила одну качалку харбор","lang":"ru","style":"starter","product":"Harbor rocking chair","qty":1,"stage":"sew"}
+{"text":"packed four round poufs","lang":"en","style":"starter","product":"Round pouf","qty":4,"stage":"pack"}
+{"text":"упаковала три круглых пуфа","lang":"ru","style":"starter","product":"Round pouf","qty":3,"stage":"pack"}
+{"text":"upholstered two square poufs","lang":"en","style":"starter","product":"Square pouf","qty":2,"stage":"uph"}
+{"text":"обил два квадратных пуфа","lang":"ru","style":"starter","product":"Square pouf","qty":2,"stage":"uph"}
+{"text":"built one harbor with straight legs","lang":"en","style":"starter","product":"Harbor armchair","qty":1,"stage":"asm","option":"straight legs"}
+{"text":"собрала один харбор на прямых ногах","lang":"ru","style":"starter","product":"Harbor armchair","qty":1,"stage":"asm","option":"straight legs"}
+{"text":"stitched three cozies","lang":"en","style":"starter","product":"Cozy armchair","qty":3,"stage":"sew"}
+{"text":"сшил три кози","lang":"ru","style":"starter","product":"Cozy armchair","qty":3,"stage":"sew"}
+{"text":"boxed one square pouf","lang":"en","style":"starter","product":"Square pouf","qty":1,"stage":"pack"}
+{"text":"упаковал один квадратный пуф","lang":"ru","style":"starter","product":"Square pouf","qty":1,"stage":"pack"}
+{"text":"cut three seat cushions for harbor","lang":"en","style":"starter","product":"Harbor armchair","qty":3,"stage":"cut","component":"seat cushions"}
+{"text":"раскроила три сидушки на харбор","lang":"ru","style":"starter","product":"Harbor armchair","qty":3,"stage":"cut","component":"seat cushions"}
+{"text":"two harbors not done","lang":"en","style":"starter","reject":true}
+{"text":"два харбора не готовы","lang":"ru","style":"starter","reject":true}
+{"text":"maybe assembled two harbor","lang":"en","style":"starter","reject":true}
+{"text":"завтра собрал два харбора","lang":"ru","style":"starter","reject":true}
+{"text":"Please, I have just finished two Harbor armchairs, assembly, with curved legs.","lang":"en","style":"different","product":"Harbor armchair","qty":2,"stage":"asm","option":"curved legs"}
+{"text":"Сегодня уже готовы два харбора, сборка, кривые ножки.","lang":"ru","style":"different","product":"Harbor armchair","qty":2,"stage":"asm","option":"curved legs"}
+{"text":"For Harbor: seat cushions, three pieces, sewn, done.","lang":"en","style":"different","product":"Harbor armchair","qty":3,"stage":"sew","component":"seat cushions"}
+{"text":"На харбор сидушек три штуки, пошил, готово.","lang":"ru","style":"different","product":"Harbor armchair","qty":3,"stage":"sew","component":"seat cushions"}
+{"text":"COZY armchairs, 2 pcs, already done at cutting","lang":"en","style":"different","product":"Cozy armchair","qty":2,"stage":"cut"}
+{"text":"Кози: раскрой, 2 шт, готово сегодня","lang":"ru","style":"different","product":"Cozy armchair","qty":2,"stage":"cut"}
+{"text":"Just finished a harbor rocker at assembly","lang":"en","style":"different","product":"Harbor rocking chair","qty":1,"stage":"asm"}
+{"text":"Харборы, три штуки, уже обтянул","lang":"ru","style":"different","product":"Harbor armchair","qty":3,"stage":"uph"}
+{"text":"Round poufs: four pieces ready, boxed now","lang":"en","style":"different","product":"Round pouf","qty":4,"stage":"pack"}
+{"text":"Квадратных пуфа два, сделала, обивка","lang":"ru","style":"different","product":"Square pouf","qty":2,"stage":"uph"}
+{"text":"Harbor on straight legs: two pieces, built for the floor","lang":"en","style":"different","product":"Harbor armchair","qty":2,"stage":"asm","option":"straight legs"}
+{"text":"Сборка закончена: пара харборов на кривых ногах","lang":"ru","style":"different","product":"Harbor armchair","qty":2,"stage":"asm","option":"curved legs"}
+{"text":"Knocked out a couple of harbors, curly feet","lang":"en","style":"different","product":"Harbor armchair","qty":2,"stage":"asm","option":"curved legs"}
+{"text":"Два харбора дожал, ножки дугой","lang":"ru","style":"different","product":"Harbor armchair","qty":2,"stage":"asm","option":"curved legs"}
+{"text":"Square poufs, five, packed; ready now please","lang":"en","style":"different","product":"Square pouf","qty":5,"stage":"pack"}
+{"text":"На харбор сидушки: пять, сшила сегодня","lang":"ru","style":"different","product":"Harbor armchair","qty":5,"stage":"sew","component":"seat cushions"}
+{"text":"Two harbors and three cozies assembled","lang":"en","style":"different","reject":true}
+{"text":"Собрал два харбора и три кози","lang":"ru","style":"different","reject":true}
+{"text":"No, those two harbor armchairs are not assembled","lang":"en","style":"different","reject":true}
+{"text":"Не отмечай два харбора, ещё не собрал","lang":"ru","style":"different","reject":true}
+{"text":"Harbor done","lang":"en","style":"different","reject":true}
+{"text":"Харбор готов, сколько не помню","lang":"ru","style":"different","reject":true}
+{"text":"One harbor assembled and packed","lang":"en","style":"different","reject":true}
+{"text":"Одно кресло неизвестной модели собрано","lang":"ru","style":"different","reject":true}

@@ -602,6 +602,8 @@ def apply(conn: sqlite3.Connection, person_id: int, action_id: int,
                                   due_date=f["due_date"]["id"], variant=f["variant"]["id"] or "",
                                   source="agent", commit=False)
         item["order_id"] = oid
+        conn.execute('INSERT OR REPLACE INTO gate_sources (order_id, quote) VALUES (?, ?)',
+                     (oid, item.get('line') or payload['source']))
         created.append(oid)
         when = domain.now(conn).isoformat(timespec="seconds")
         for kind in ("product", "customer"):  # the person's correction becomes a synonym
